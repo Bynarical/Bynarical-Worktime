@@ -19,7 +19,7 @@ import {
 } from './types';
 import { chainHash } from './hash';
 import { dateKey, ceilTimeToStep } from './time';
-import { supabase, isSupabaseConfigured, makeTempClient } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import * as api from './supabaseApi';
 
 function uid(prefix: string): string {
@@ -196,19 +196,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 관리자: 신규 직원 계정 생성. 임시 클라이언트로 signUp 하여 관리자 세션 유지.
+  // 관리자: 신규 직원 계정 생성. Edge Function이 service 권한으로 생성하며 호출자가 관리자인지 서버에서 검증.
+  // (공개 가입 OFF 상태에서도 동작 → 일반 직원은 계정을 만들 수 없음)
   const adminCreateEmployee = async (a: CreateEmployeeArgs): Promise<AuthResult> => {
     if (!supabase) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
     const dupe = Object.values(profilesById).some((p) => (p.name || '').trim() === a.name.trim());
     if (dupe) return { ok: false, error: '같은 이름의 직원이 이미 있습니다. 이름을 구분해서 입력하세요.' };
-    const tmp = makeTempClient();
-    if (!tmp) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
-    const { error } = await tmp.auth.signUp({
-      email: a.email.trim(),
-      password: a.password,
-      options: { data: { name: a.name.trim(), emp_no: a.empNo?.trim() || '', hire_date: a.hireDate || '' } },
+    const { data, error } = await supabase.functions.invoke('create-employee', {
+      body: {
+        email: a.email.trim(),
+        password: a.password,
+        name: a.name.trim(),
+        emp_no: a.empNo?.trim() || '',
+        hire_date: a.hireDate || '',
+      },
     });
-    if (error) return { ok: false, error: error.message };
+    if (error) return { ok: false, error: '직원 등록 함수를 호출하지 못했습니다. (Edge Function 배포 확인)' };
+    if (data && (data as any).ok === false) return { ok: false, error: (data as any).error || '등록 실패' };
     await refresh(); // 새 직원이 목록에 반영되도록
     return { ok: true };
   };
