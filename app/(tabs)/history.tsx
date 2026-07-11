@@ -8,6 +8,7 @@ import {
   Body,
   Button,
   Badge,
+  Chip,
   Row,
   Divider,
   StatTile,
@@ -34,6 +35,13 @@ export default function History() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [signWeek, setSignWeek] = useState<string | null>(null);
   const [sigText, setSigText] = useState('');
+  const [viewUserId, setViewUserId] = useState<string | null>(null);
+
+  const meId = s.user?.id;
+  const viewId = viewUserId ?? meId; // 관리자가 다른 직원을 볼 수 있음
+  const isSelf = viewId === meId;
+  const viewName = (viewId ? s.profilesById[viewId]?.name || s.user?.name : '') || '';
+  const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p }));
 
   const base = new Date();
   base.setMonth(base.getMonth() + monthOffset);
@@ -43,12 +51,12 @@ export default function History() {
   const monthPrefix = `${y}-${String(m + 1).padStart(2, '0')}`;
 
   const myRecords = useMemo(
-    () => s.records.filter((r) => r.userId === s.user?.id && r.date.startsWith(monthPrefix)),
-    [s.records, s.user, monthPrefix]
+    () => s.records.filter((r) => r.userId === viewId && r.date.startsWith(monthPrefix)),
+    [s.records, viewId, monthPrefix]
   );
   const myLeaves = useMemo(
-    () => s.leaves.filter((l) => l.userId === s.user?.id && l.status === 'APPROVED'),
-    [s.leaves, s.user]
+    () => s.leaves.filter((l) => l.userId === viewId && l.status === 'APPROVED'),
+    [s.leaves, viewId]
   );
 
   const policy = s.settings.workPolicy;
@@ -85,7 +93,7 @@ export default function History() {
   }, [dayRows]);
 
   function confirmedFor(weekStart: string) {
-    return s.confirmations.find((c) => c.userId === s.user?.id && c.weekStart === weekStart);
+    return s.confirmations.find((c) => c.userId === viewId && c.weekStart === weekStart);
   }
 
   async function submitSignature(weekStart: string, rows: typeof dayRows) {
@@ -122,7 +130,7 @@ export default function History() {
       r.comp.labels.join(' '),
       shortHash(r.rec?.hash),
     ]);
-    exportCsv(`worktime_${monthPrefix}_${s.user?.name || ''}.csv`, toCsv(headers, rows));
+    exportCsv(`worktime_${monthPrefix}_${viewName || ''}.csv`, toCsv(headers, rows));
   }
 
   return (
@@ -159,6 +167,24 @@ export default function History() {
         </Pressable>
       </Hero>
 
+      {/* 관리자: 직원 선택 */}
+      {s.adminUnlocked && (
+        <Card>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Text style={{ fontWeight: '700', color: t.text }}>직원 근태 조회</Text>
+            <Badge text={isSelf ? '본인' : viewName} color={t.primary} />
+          </Row>
+          <Row style={{ flexWrap: 'wrap' }}>
+            <Chip label="본인" active={isSelf} onPress={() => setViewUserId(meId ?? null)} small />
+            {employees
+              .filter((e) => e.id !== meId)
+              .map((e) => (
+                <Chip key={e.id} label={`${e.name}${e.empNo ? ` (${e.empNo})` : ''}`} active={viewId === e.id} onPress={() => setViewUserId(e.id)} small />
+              ))}
+          </Row>
+        </Card>
+      )}
+
       {/* 주간 확인(전자서명) */}
       <Card>
         <Text style={{ fontWeight: '700', color: t.text }}>주간 확인 (전자서명)</Text>
@@ -180,6 +206,8 @@ export default function History() {
                   <Badge text={`✓ ${cf.signature} 서명`} color={t.success} />
                   <Muted size={11}>해시 {shortHash(cf.hash)}</Muted>
                 </Row>
+              ) : !isSelf ? (
+                <Muted size={12}>미서명</Muted>
               ) : signWeek === ws ? (
                 <View style={{ gap: 8 }}>
                   <Field label="서명(이름 입력)" value={sigText} onChangeText={setSigText} placeholder={s.user?.name} />
