@@ -37,6 +37,9 @@
           "locationWhenInUsePermission": "출퇴근 위치 확인을 위해 현재 위치를 사용합니다."
         }
       ]
-    ]
+    ],
+    "experiments": {
+      "baseUrl": "/BYnarical-Worktime"
+    }
   }
 }
