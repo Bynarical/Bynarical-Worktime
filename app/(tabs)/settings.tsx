@@ -55,16 +55,8 @@ export default function Settings() {
 function ProfileCard() {
   const s = useStore();
   const t = useTheme();
-  const [name, setName] = useState(s.user?.name || '');
-  const [empNo, setEmpNo] = useState(s.user?.empNo || '');
-  const [msg, setMsg] = useState('');
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
-
-  async function save() {
-    await s.updateProfile({ name: name.trim(), empNo: empNo.trim() || undefined });
-    setMsg('✓ 저장되었습니다.');
-  }
 
   async function doChangePw() {
     setPwMsg('');
@@ -77,16 +69,15 @@ function ProfileCard() {
   return (
     <Card>
       <Row><Badge text="프로필" color={t.primary} />{s.user?.isAdmin && <Badge text="관리자 계정" color={t.trip} />}</Row>
-      <Field label="이름" value={name} onChangeText={setName} />
-      <Field label="사번" value={empNo} onChangeText={setEmpNo} autoCapitalize="none" />
+      <KV k="이름" v={s.user?.name || '-'} />
+      <KV k="사번" v={s.user?.empNo || '미등록'} vColor={s.user?.empNo ? undefined : t.textFaint} />
       <KV k="입사일 (연차 계산)" v={s.user?.hireDate || '미등록 · 관리자 설정'} vColor={s.user?.hireDate ? undefined : t.textFaint} />
-      {msg ? <Muted size={12}>{msg}</Muted> : null}
-      <Button label="프로필 저장" variant="primary" small onPress={save} />
+      <Muted size={11}>이름·사번·입사일은 관리자가 관리합니다. 변경이 필요하면 관리자에게 문의하세요.</Muted>
       <Divider />
       <Text style={{ fontWeight: '700', color: t.textDim }}>비밀번호 변경</Text>
       <Field label="새 비밀번호" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="6자 이상" />
       {pwMsg ? <Muted size={12}>{pwMsg}</Muted> : null}
-      <Button label="비밀번호 변경" variant="neutral" small onPress={doChangePw} />
+      <Button label="비밀번호 변경" variant="primary" small onPress={doChangePw} />
     </Card>
   );
 }

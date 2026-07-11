@@ -113,6 +113,27 @@ as $$
   select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
 $$;
 
+-- 이름 → 로그인 이메일 조회 (직원은 이름+비밀번호로 로그인).
+-- 정확히 1명일 때만 이메일 반환(동명이인/없음 → null). anon도 호출 가능해야 로그인 화면에서 사용.
+create or replace function public.login_email_for_name(p_name text)
+returns text
+language plpgsql
+security definer
+stable
+set search_path = public, auth
+as $$
+declare c int; e text;
+begin
+  select count(*) into c from public.profiles where trim(name) = trim(p_name);
+  if c <> 1 then return null; end if;
+  select u.email into e
+    from auth.users u join public.profiles pr on pr.id = u.id
+    where trim(pr.name) = trim(p_name);
+  return e;
+end;
+$$;
+grant execute on function public.login_email_for_name(text) to anon, authenticated;
+
 -- ============================================================
 -- 가입 시 프로필 자동 생성 (회원가입 메타데이터에서 이름/사번 등 추출)
 -- ============================================================

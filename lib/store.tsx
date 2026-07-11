@@ -19,14 +19,14 @@ import {
 } from './types';
 import { chainHash } from './hash';
 import { dateKey, ceilTimeToStep } from './time';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, makeTempClient } from './supabase';
 import * as api from './supabaseApi';
 
 function uid(prefix: string): string {
   return `${prefix}_${new Date().getTime().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-interface RegisterArgs {
+interface CreateEmployeeArgs {
   email: string;
   password: string;
   name: string;
@@ -53,8 +53,8 @@ interface StoreValue {
   profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>;
   adminUnlocked: boolean;
 
-  register: (a: RegisterArgs) => Promise<AuthResult>;
-  login: (email: string, password: string) => Promise<AuthResult>;
+  login: (name: string, password: string) => Promise<AuthResult>;
+  adminCreateEmployee: (a: CreateEmployeeArgs) => Promise<AuthResult>;
   logout: () => Promise<void>;
   changePassword: (newPw: string) => Promise<AuthResult>;
   updateProfile: (patch: Partial<User>) => Promise<void>;
@@ -180,34 +180,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ---- auth ----
-  const register = async (a: RegisterArgs): Promise<AuthResult> => {
+  // 직원 로그인: 이름 → (서버 함수로) 이메일 조회 → 비밀번호 인증
+  const login = async (name: string, password: string): Promise<AuthResult> => {
     if (!supabase) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
     setBusy(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: a.email.trim(),
-        password: a.password,
-        options: { data: { name: a.name.trim(), emp_no: a.empNo?.trim() || '', hire_date: a.hireDate || '' } },
-      });
-      if (error) return { ok: false, error: error.message };
-      if (!data.session) return { ok: true, needConfirm: true }; // 이메일 확인 필요 설정
-      // onAuthStateChange가 loadAll 처리
+      const { data: email, error: rerr } = await supabase.rpc('login_email_for_name', { p_name: name.trim() });
+      if (rerr) return { ok: false, error: rerr.message };
+      if (!email) return { ok: false, error: '이름을 찾을 수 없거나 동명이인이 있습니다. 관리자에게 문의하세요.' };
+      const { error } = await supabase.auth.signInWithPassword({ email: email as string, password });
+      if (error) return { ok: false, error: '비밀번호가 올바르지 않습니다.' };
       return { ok: true };
     } finally {
       setBusy(false);
     }
   };
 
-  const login = async (email: string, password: string): Promise<AuthResult> => {
+  // 관리자: 신규 직원 계정 생성. 임시 클라이언트로 signUp 하여 관리자 세션 유지.
+  const adminCreateEmployee = async (a: CreateEmployeeArgs): Promise<AuthResult> => {
     if (!supabase) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
-    setBusy(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) return { ok: false, error: error.message };
-      return { ok: true };
-    } finally {
-      setBusy(false);
-    }
+    const dupe = Object.values(profilesById).some((p) => (p.name || '').trim() === a.name.trim());
+    if (dupe) return { ok: false, error: '같은 이름의 직원이 이미 있습니다. 이름을 구분해서 입력하세요.' };
+    const tmp = makeTempClient();
+    if (!tmp) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
+    const { error } = await tmp.auth.signUp({
+      email: a.email.trim(),
+      password: a.password,
+      options: { data: { name: a.name.trim(), emp_no: a.empNo?.trim() || '', hire_date: a.hireDate || '' } },
+    });
+    if (error) return { ok: false, error: error.message };
+    await refresh(); // 새 직원이 목록에 반영되도록
+    return { ok: true };
   };
 
   const logout = async () => {
@@ -411,8 +414,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       confirmations,
       profilesById,
       adminUnlocked: !!user?.isAdmin,
-      register,
       login,
+      adminCreateEmployee,
       logout,
       changePassword,
       updateProfile,

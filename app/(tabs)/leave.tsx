@@ -199,44 +199,70 @@ function AdminApproval() {
   const t = useTheme();
   const pending = s.leaves.filter((l) => l.status === 'REQUESTED');
   const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p }));
+
+  // 직원 등록
+  const [cEmail, setCEmail] = useState('');
+  const [cName, setCName] = useState('');
+  const [cEmpNo, setCEmpNo] = useState('');
+  const [cHire, setCHire] = useState('');
+  const [cPw, setCPw] = useState('');
+  const [cMsg, setCMsg] = useState('');
+  const [cBusy, setCBusy] = useState(false);
+
+  // 직원 편집/조정
   const [adjUser, setAdjUser] = useState('');
-  const [adjHours, setAdjHours] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editEmpNo, setEditEmpNo] = useState('');
   const [hireInput, setHireInput] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
+  const [adjHours, setAdjHours] = useState('');
   const [adjMsg, setAdjMsg] = useState('');
-  const [hireMsg, setHireMsg] = useState('');
+
+  async function createEmployee() {
+    setCMsg('');
+    if (!cName.trim()) return setCMsg('이름을 입력하세요.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cEmail.trim())) return setCMsg('올바른 이메일(계정 식별용)을 입력하세요.');
+    if (cPw.length < 6) return setCMsg('초기 비밀번호는 6자 이상이어야 합니다.');
+    if (cHire && !/^\d{4}-\d{2}-\d{2}$/.test(cHire)) return setCMsg('입사일 형식은 YYYY-MM-DD 입니다.');
+    setCBusy(true);
+    const r = await s.adminCreateEmployee({ email: cEmail, name: cName, empNo: cEmpNo || undefined, hireDate: cHire || undefined, password: cPw });
+    setCBusy(false);
+    if (!r.ok) return setCMsg(r.error || '등록 실패');
+    setCMsg(`✓ ${cName} 등록 완료 (초기 비밀번호를 본인에게 전달하세요)`);
+    setCEmail(''); setCName(''); setCEmpNo(''); setCHire(''); setCPw('');
+  }
 
   function pickEmployee(id: string) {
     setAdjUser(id);
+    setEditName(s.profilesById[id]?.name || '');
+    setEditEmpNo(s.profilesById[id]?.empNo || '');
     setHireInput(s.profilesById[id]?.hireDate || '');
-    setAdjMsg('');
-    setHireMsg('');
+    setInfoMsg(''); setAdjMsg('');
   }
 
-  async function saveHire() {
-    setHireMsg('');
-    if (!adjUser) return setHireMsg('직원을 선택하세요.');
-    if (hireInput && !/^\d{4}-\d{2}-\d{2}$/.test(hireInput)) return setHireMsg('입사일 형식은 YYYY-MM-DD 입니다.');
-    await s.adminUpdateProfile(adjUser, { hireDate: hireInput || undefined });
-    setHireMsg(`✓ ${s.profilesById[adjUser]?.name || ''} 입사일 저장`);
+  async function saveInfo() {
+    setInfoMsg('');
+    if (!adjUser) return;
+    if (!editName.trim()) return setInfoMsg('이름은 비울 수 없습니다.');
+    if (hireInput && !/^\d{4}-\d{2}-\d{2}$/.test(hireInput)) return setInfoMsg('입사일 형식은 YYYY-MM-DD 입니다.');
+    await s.adminUpdateProfile(adjUser, { name: editName.trim(), empNo: editEmpNo.trim() || undefined, hireDate: hireInput || undefined });
+    setInfoMsg('✓ 직원 정보 저장');
   }
 
   async function grant() {
     const h = parseFloat(adjHours);
-    if (!adjUser || Number.isNaN(h)) {
-      setAdjMsg('직원과 시간을 선택/입력하세요.');
-      return;
-    }
+    if (!adjUser || Number.isNaN(h)) return setAdjMsg('시간을 입력하세요.');
     await s.addAdjustment(adjUser, h, '관리자 조정');
-    const nm = s.profilesById[adjUser]?.name || adjUser;
-    setAdjMsg(`✓ ${nm} 에 ${h}h 조정 반영`);
+    setAdjMsg(`✓ ${s.profilesById[adjUser]?.name || ''} 에 ${h}h 조정 반영`);
     setAdjHours('');
   }
 
   return (
     <>
       <Divider />
-      <Row><Badge text="관리자" color={t.primary} /><Text style={{ fontWeight: '800', color: t.text }}>연차 승인 / 조정</Text></Row>
+      <Row><Badge text="관리자" color={t.primary} /><Text style={{ fontWeight: '800', color: t.text }}>연차 승인 / 직원 관리</Text></Row>
 
+      {/* 승인 대기 */}
       <Text style={{ fontWeight: '700', color: t.textDim }}>승인 대기 ({pending.length})</Text>
       {pending.length === 0 && <Card><Muted>대기 중인 신청이 없습니다</Muted></Card>}
       {pending.map((l) => (
@@ -253,21 +279,30 @@ function AdminApproval() {
         </Card>
       ))}
 
+      {/* 신규 직원 등록 */}
       <Card>
-        <Text style={{ fontWeight: '700', color: t.text }}>직원 관리</Text>
-        <Muted size={12}>직원을 선택해 입사일(연차 계산 기준)을 등록하거나 연차를 가감합니다.</Muted>
+        <Text style={{ fontWeight: '700', color: t.text }}>신규 직원 등록</Text>
+        <Muted size={12}>관리자가 계정을 생성합니다. 직원은 <Text style={{ fontWeight: '700' }}>이름 + 비밀번호</Text>로 로그인하며, 이후 비밀번호를 스스로 변경할 수 있습니다.</Muted>
+        <Field label="이름 (로그인 ID)" value={cName} onChangeText={setCName} placeholder="홍길동" />
+        <Field label="이메일 (계정 식별용)" value={cEmail} onChangeText={setCEmail} placeholder="hong@company.com" autoCapitalize="none" keyboardType="email-address" />
+        <Row>
+          <View style={{ flex: 1 }}><Field label="사번" value={cEmpNo} onChangeText={setCEmpNo} placeholder="2024001" autoCapitalize="none" /></View>
+          <View style={{ flex: 1 }}><Field label="입사일" value={cHire} onChangeText={setCHire} placeholder="YYYY-MM-DD" autoCapitalize="none" /></View>
+        </Row>
+        <Field label="초기 비밀번호" value={cPw} onChangeText={setCPw} secureTextEntry placeholder="6자 이상" />
+        {cMsg ? <Muted size={12} style={{ color: cMsg.startsWith('✓') ? t.success : t.danger }}>{cMsg}</Muted> : null}
+        <Button label="직원 등록" variant="primary" loading={cBusy} onPress={createEmployee} />
+      </Card>
+
+      {/* 직원 편집/조정 */}
+      <Card>
+        <Text style={{ fontWeight: '700', color: t.text }}>직원 정보 · 연차 조정</Text>
         <View style={{ gap: 6 }}>
-          <Text style={{ color: t.textDim, fontSize: 12.5, fontWeight: '600' }}>직원</Text>
+          <Text style={{ color: t.textDim, fontSize: 12.5, fontWeight: '600' }}>직원 선택 ({employees.length}명)</Text>
           <Row style={{ flexWrap: 'wrap' }}>
-            {employees.length === 0 && <Muted size={12}>직원 목록이 없습니다</Muted>}
+            {employees.length === 0 && <Muted size={12}>직원이 없습니다</Muted>}
             {employees.map((e) => (
-              <Chip
-                key={e.id}
-                label={`${e.name}${e.empNo ? ` (${e.empNo})` : ''}${e.hireDate ? '' : ' ⚠'}`}
-                active={adjUser === e.id}
-                onPress={() => pickEmployee(e.id)}
-                small
-              />
+              <Chip key={e.id} label={`${e.name}${e.empNo ? ` (${e.empNo})` : ''}${e.hireDate ? '' : ' ⚠'}`} active={adjUser === e.id} onPress={() => pickEmployee(e.id)} small />
             ))}
           </Row>
         </View>
@@ -275,28 +310,22 @@ function AdminApproval() {
         {adjUser ? (
           <>
             <Divider />
-            <Row style={{ justifyContent: 'space-between' }}>
-              <Body style={{ fontWeight: '700' }}>{s.profilesById[adjUser]?.name}</Body>
-              <Muted size={12}>현재 입사일: {s.profilesById[adjUser]?.hireDate || '미등록'}</Muted>
+            <Field label="이름" value={editName} onChangeText={setEditName} />
+            <Row>
+              <View style={{ flex: 1 }}><Field label="사번" value={editEmpNo} onChangeText={setEditEmpNo} autoCapitalize="none" /></View>
+              <View style={{ flex: 1 }}><Field label="입사일 (연차 기준)" value={hireInput} onChangeText={setHireInput} placeholder="YYYY-MM-DD" autoCapitalize="none" /></View>
             </Row>
+            {infoMsg ? <Muted size={12} style={{ color: infoMsg.startsWith('✓') ? t.success : t.danger }}>{infoMsg}</Muted> : null}
+            <Button label="직원 정보 저장" variant="primary" small onPress={saveInfo} />
+            <Divider />
             <Row style={{ alignItems: 'flex-end' }}>
-              <View style={{ flex: 1 }}>
-                <Field label="입사일" value={hireInput} onChangeText={setHireInput} placeholder="YYYY-MM-DD" autoCapitalize="none" />
-              </View>
-              <Button label="입사일 저장" variant="primary" small onPress={saveHire} />
-            </Row>
-            {hireMsg ? <Muted size={12}>{hireMsg}</Muted> : null}
-
-            <Row style={{ alignItems: 'flex-end' }}>
-              <View style={{ flex: 1 }}>
-                <Field label="연차 조정(h) · 양수=부여, 음수=차감" value={adjHours} onChangeText={setAdjHours} placeholder="예: 8 또는 -2" keyboardType="numbers-and-punctuation" />
-              </View>
-              <Button label="조정 적용" variant="trip" small onPress={grant} />
+              <View style={{ flex: 1 }}><Field label="연차 조정(h) · 양수=부여, 음수=차감" value={adjHours} onChangeText={setAdjHours} placeholder="예: 8 또는 -2" keyboardType="numbers-and-punctuation" /></View>
+              <Button label="조정" variant="trip" small onPress={grant} />
             </Row>
             {adjMsg ? <Muted size={12}>{adjMsg}</Muted> : null}
           </>
         ) : (
-          <Muted size={12}>위에서 직원을 선택하세요.</Muted>
+          <Muted size={12}>편집하거나 연차를 조정할 직원을 선택하세요.</Muted>
         )}
       </Card>
     </>
