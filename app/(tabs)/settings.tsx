@@ -3,8 +3,8 @@ import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Screen,
+  Hero,
   Card,
-  Title,
   Muted,
   Body,
   Button,
@@ -26,7 +26,16 @@ export default function Settings() {
 
   return (
     <Screen>
-      <Title>설정</Title>
+      <Hero style={{ paddingVertical: 22 }}>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ gap: 3 }}>
+            <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '600' }}>설정</Text>
+            <Text style={{ color: '#fff', fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>{s.user?.name}님</Text>
+            <Text style={{ color: t.onHeroDim, fontSize: 12 }}>{s.user?.empNo ? `사번 ${s.user.empNo}` : '사번 미등록'}</Text>
+          </View>
+          {s.user?.isAdmin && <Badge text="관리자 계정" color="#fff" soft="rgba(255,255,255,0.2)" />}
+        </Row>
+      </Hero>
       <ProfileCard />
       <WorkplacesCard />
       <AdminCard />

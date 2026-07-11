@@ -2,15 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import {
   Screen,
+  Hero,
   Card,
-  Title,
   Muted,
   Body,
   Button,
   Badge,
   Row,
   Divider,
-  KV,
   StatTile,
   Field,
 } from '@/components/ui';
@@ -128,38 +127,37 @@ export default function History() {
 
   return (
     <Screen>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Button label="‹ 이전" variant="neutral" small onPress={() => setMonthOffset((v) => v - 1)} />
-        <Title>{monthLabel}</Title>
-        <Button label="다음 ›" variant="neutral" small onPress={() => setMonthOffset((v) => v + 1)} disabled={monthOffset >= 0} />
-      </Row>
-
-      {/* 월 집계 */}
-      <Card>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Text style={{ fontWeight: '700', color: t.text }}>월 집계</Text>
-          <Button label="CSV 내보내기" variant="outline" small onPress={onExport} />
+      {/* 월 집계 히어로 */}
+      <Hero>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <Pressable onPress={() => setMonthOffset((v) => v - 1)} hitSlop={12}>
+            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>‹</Text>
+          </Pressable>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ color: t.onHeroDim, fontSize: 12, fontWeight: '600' }}>월 근무 요약</Text>
+            <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.3 }}>{monthLabel}</Text>
+          </View>
+          <Pressable onPress={() => monthOffset < 0 && setMonthOffset((v) => v + 1)} hitSlop={12}>
+            <Text style={{ color: monthOffset >= 0 ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 22, fontWeight: '700' }}>›</Text>
+          </Pressable>
         </Row>
-        <Row style={{ gap: 10, flexWrap: 'wrap' }}>
-          <StatTile label="근무일" value={`${summary.days}일`} />
-          <StatTile label="총 실근로" value={minutesToKor(summary.totalWorked)} color={t.primary} />
-          <StatTile
-            label="초과/부족"
-            value={minutesToKor(summary.totalDiff)}
-            color={summary.totalDiff >= 0 ? t.success : t.danger}
-          />
+        <Row style={{ gap: 8 }}>
+          <StatTile onHero label="근무일" value={`${summary.days}일`} />
+          <StatTile onHero label="총 실근로" value={minutesToKor(summary.totalWorked)} />
+          <StatTile onHero label="초과/부족" value={minutesToKor(summary.totalDiff)} sub={summary.totalDiff >= 0 ? '초과' : '부족'} />
         </Row>
-        <Row style={{ gap: 10, flexWrap: 'wrap' }}>
-          <StatTile label="연차 사용" value={`${summary.leaveMinutes / 60}h`} color={t.trip} />
-          <StatTile label="지각" value={`${summary.lateCount}회`} color={summary.lateCount ? t.danger : t.text} />
-          <StatTile label="코어위반" value={`${summary.coreViolationCount}회`} color={summary.coreViolationCount ? t.danger : t.text} />
+        <Row style={{ gap: 8 }}>
+          <StatTile onHero label="연차" value={`${summary.leaveMinutes / 60}h`} />
+          <StatTile onHero label="지각" value={`${summary.lateCount}회`} />
+          <StatTile onHero label="코어위반" value={`${summary.coreViolationCount}회`} />
         </Row>
-        <Row style={{ gap: 10, flexWrap: 'wrap' }}>
-          <StatTile label="조기퇴근" value={`${summary.earlyLeaveCount}회`} />
-          <StatTile label="퇴근미기록" value={`${summary.missingCount}회`} color={summary.missingCount ? t.warning : t.text} />
-          <StatTile label="출장" value={`${summary.tripCount}회`} color={t.trip} />
-        </Row>
-      </Card>
+        <Pressable
+          onPress={onExport}
+          style={{ backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>⬇ CSV 내보내기</Text>
+        </Pressable>
+      </Hero>
 
       {/* 주간 확인(전자서명) */}
       <Card>

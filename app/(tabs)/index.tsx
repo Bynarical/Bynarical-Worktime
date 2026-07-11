@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Screen,
+  Hero,
   Card,
-  Title,
   Muted,
   Body,
   Button,
@@ -13,9 +13,12 @@ import {
   Divider,
   KV,
   StatTile,
+  ProgressBar,
+  ProgressRing,
+  Switch,
+  useTheme,
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
-import { useTheme } from '@/lib/theme';
 import { getCurrentPoint, nearestWorkplace } from '@/lib/geo';
 import { computeDay, workEndMinutes } from '@/lib/attendance';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
@@ -30,6 +33,8 @@ function useNow(intervalMs = 15000) {
   return now;
 }
 
+const WD = ['일', '월', '화', '수', '목', '금', '토'];
+
 export default function Today() {
   const s = useStore();
   const t = useTheme();
@@ -39,7 +44,7 @@ export default function Today() {
 
   const [busy, setBusy] = useState(false);
   const [trip, setTrip] = useState(false);
-  const [geoMsg, setGeoMsg] = useState<string>('');
+  const [geoMsg, setGeoMsg] = useState('');
   const [confirmOutOfRange, setConfirmOutOfRange] = useState(false);
 
   const today = dateKey(now);
@@ -47,17 +52,17 @@ export default function Today() {
   const todaysLeaves = s.leaves.filter(
     (l) => l.userId === s.user?.id && l.date === today && (l.status === 'APPROVED' || l.status === 'REQUESTED')
   );
-
   const comp = useMemo(
     () => computeDay(rec, todaysLeaves.filter((l) => l.status === 'APPROVED'), policy, { nowMin: minutesOfDay(now), dateStr: today }),
     [rec, todaysLeaves, policy, now, today]
   );
 
-  // 지금 출근하면 적용될 출근시각(step 올림)과 예상 퇴근시각 미리보기
   const previewStartMin = ceilToStep(minutesOfDay(now), policy.clockInStepMinutes || 30);
   const previewOutMin = workEndMinutes(previewStartMin, comp.requiredMinutes, policy);
-
   const state: 'before' | 'working' | 'done' = !rec?.checkIn ? 'before' : !rec?.checkOut ? 'working' : 'done';
+  const workedNow = comp.workedMinutes;
+  const remaining = Math.max(0, comp.requiredMinutes - workedNow);
+  const progress = comp.requiredMinutes > 0 ? workedNow / comp.requiredMinutes : 0;
 
   async function doCheckIn(kind: 'WORK' | 'TRIP', override = false) {
     if (busy) return;
@@ -112,36 +117,58 @@ export default function Today() {
     setBusy(false);
   }
 
-  const workedNow = comp.workedMinutes;
-  const remaining = Math.max(0, comp.requiredMinutes - workedNow);
-
   return (
     <Screen>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <View>
-          <Muted>{today} · {['일', '월', '화', '수', '목', '금', '토'][new Date(now).getDay()]}요일</Muted>
-          <Title>{s.user?.name}님 👋</Title>
-        </View>
-        <Text style={{ fontSize: 30, fontWeight: '800', color: t.primary }}>{timeHM(now)}</Text>
-      </Row>
-
-      {/* 코어타임 안내 */}
-      <Card style={{ backgroundColor: t.accentSoft, borderColor: t.primary + '55' }}>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Text style={{ color: t.primary, fontWeight: '800' }}>코어타임 {policy.coreStart}–{policy.coreEnd}</Text>
-          <Badge text={`휴게 ${policy.breakStart}–${policy.breakEnd}`} color={t.primary} />
+      {/* 히어로 */}
+      <Hero>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ gap: 2 }}>
+            <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '600' }}>{today} · {WD[new Date(now).getDay()]}요일</Text>
+            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>{s.user?.name}님</Text>
+          </View>
+          <Badge
+            text={state === 'working' ? '근무 중' : state === 'done' ? '근무 완료' : comp.isFullLeave ? '연차' : '출근 전'}
+            color="#fff"
+            soft="rgba(255,255,255,0.2)"
+          />
         </Row>
-        <Muted size={12}>
-          코어타임 시작({policy.latestClockIn})까지 출근하세요. 출근 시각은 {policy.clockInStepMinutes}분 단위로 자동 적용되며(예: 8:20 출근 → 8:30 시작), 소정근로 {policy.dailyWorkMinutes / 60}시간(휴게 제외)입니다.
-        </Muted>
-      </Card>
+
+        {state === 'working' ? (
+          <View style={{ alignItems: 'center', paddingVertical: 6 }}>
+            <ProgressRing
+              size={168}
+              stroke={14}
+              progress={progress}
+              color="#fff"
+              center={
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ color: t.onHeroDim, fontSize: 12, fontWeight: '600' }}>현재 근무</Text>
+                  <Text style={{ color: '#fff', fontSize: 30, fontWeight: '800', letterSpacing: -1 }}>{minutesToKor(workedNow)}</Text>
+                  <Text style={{ color: t.onHeroDim, fontSize: 12 }}>퇴근가능 {minutesToHM(comp.expectedOutMin)}</Text>
+                </View>
+              }
+            />
+          </View>
+        ) : (
+          <Text style={{ color: '#fff', fontSize: 52, fontWeight: '800', letterSpacing: -2, textAlign: 'center', paddingVertical: 8 }}>
+            {timeHM(now)}
+          </Text>
+        )}
+
+        <Row style={{ gap: 10 }}>
+          <Text style={{ color: t.onHeroDim, fontSize: 12.5, flex: 1 }}>
+            코어타임 {policy.coreStart}–{policy.coreEnd} · 휴게 {policy.breakStart}–{policy.breakEnd} · 소정 {policy.dailyWorkMinutes / 60}시간
+          </Text>
+        </Row>
+      </Hero>
 
       {/* 연차 표시 */}
       {todaysLeaves.length > 0 && (
         <Card>
-          <SectionRow label="오늘의 연차">
-            <Badge text={comp.isFullLeave ? '종일' : `${comp.leaveMinutes / 60}시간`} color={t.trip} />
-          </SectionRow>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <Text style={{ fontWeight: '700', color: t.text }}>오늘의 연차 🌴</Text>
+            <Badge text={comp.isFullLeave ? '종일' : `${comp.leaveMinutes / 60}시간`} color={t.trip} soft={t.tripSoft} />
+          </Row>
           {todaysLeaves.map((l) => (
             <KV
               key={l.id}
@@ -153,80 +180,66 @@ export default function Today() {
         </Card>
       )}
 
-      {/* 상태 카드 */}
-      <Card>
-        {state === 'before' && !comp.isFullLeave && (
-          <>
-            <SectionRow label="출근 전" />
-            <Muted size={13}>지금 출근하면 다음과 같이 적용됩니다.</Muted>
-            <Divider />
-            <KV k="적용 출근시각" v={minutesToHM(previewStartMin)} vColor={t.primary} />
-            <KV k="예상 퇴근 시각" v={minutesToHM(previewOutMin)} vColor={t.primary} />
-            <KV k="소정근로 (휴게 제외)" v={minutesToKor(comp.requiredMinutes)} />
-            {previewStartMin > hmToMinutes(policy.latestClockIn) + 0.01 && (
-              <Muted size={12}><Text style={{ color: t.danger }}>⚠️ 코어타임 시작({policy.latestClockIn}) 이후 출근은 지각으로 기록됩니다.</Text></Muted>
-            )}
-          </>
-        )}
+      {/* 상태 상세 */}
+      {state === 'before' && !comp.isFullLeave && (
+        <Card>
+          <Text style={{ fontWeight: '700', color: t.text }}>지금 출근하면</Text>
+          <Row style={{ gap: 10 }}>
+            <StatTile label="적용 출근" value={minutesToHM(previewStartMin)} color={t.primary} />
+            <StatTile label="퇴근 가능" value={minutesToHM(previewOutMin)} color={t.success} />
+            <StatTile label="소정근로" value={minutesToKor(comp.requiredMinutes)} />
+          </Row>
+          <Muted size={12}>출근 시각은 {policy.clockInStepMinutes}분 단위로 자동 적용됩니다 (예: 8:20 → 8:30). 실제 출근시각은 그대로 기록됩니다.</Muted>
+          {previewStartMin > hmToMinutes(policy.latestClockIn) + 0.01 && (
+            <Muted size={12} style={{ color: t.danger }}>⚠️ 코어타임 시작({policy.latestClockIn}) 이후 출근은 지각으로 기록됩니다.</Muted>
+          )}
+        </Card>
+      )}
 
-        {state === 'before' && comp.isFullLeave && (
-          <Body>오늘은 종일 연차입니다. 출근 기록이 필요하지 않습니다. 🌴</Body>
-        )}
+      {state === 'before' && comp.isFullLeave && (
+        <Card><Body>오늘은 종일 연차입니다. 출근 기록이 필요하지 않습니다. 🌴</Body></Card>
+      )}
 
-        {state === 'working' && (
-          <>
-            <Row style={{ justifyContent: 'space-between' }}>
-              <SectionRow label="근무 중" />
-              {rec?.type === 'TRIP' ? <Badge text="출장" color={t.trip} /> : rec?.inVerified ? <Badge text="위치확인" color={t.success} /> : <Badge text="위치미확인" color={t.warning} />}
-            </Row>
-            <Row style={{ gap: 10 }}>
-              <StatTile
-                label="출근"
-                value={rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '-'}
-                sub={`적용 ${minutesToHM(comp.effectiveStartMin)}`}
-              />
-              <StatTile label="현재 근무시간" value={minutesToKor(workedNow)} color={t.primary} sub="휴게 제외" />
-              <StatTile
-                label="퇴근 가능"
-                value={minutesToHM(comp.expectedOutMin)}
-                color={t.success}
-                sub={remaining > 0 ? `${minutesToKor(remaining)} 남음` : '충족 ✓'}
-              />
-            </Row>
-            <ProgressBar value={workedNow} max={comp.requiredMinutes} color={remaining > 0 ? t.primary : t.success} />
-            <Muted size={12}>
-              소정근로 {minutesToKor(comp.requiredMinutes)} · 휴게 {policy.breakStart}–{policy.breakEnd}는 근로시간에서 제외
-              {remaining <= 0 ? ' · 지금 퇴근 가능합니다 ✓' : ''}
-            </Muted>
-            {minutesOfDay(now) >= hmToMinutes(policy.breakStart) && minutesOfDay(now) < hmToMinutes(policy.breakEnd) && (
-              <Muted size={12}>🍽️ 현재 휴게시간입니다. 휴게는 근로시간에서 제외됩니다.</Muted>
-            )}
-          </>
-        )}
+      {state === 'working' && (
+        <Card>
+          <Row style={{ gap: 10 }}>
+            <StatTile label="출근" value={rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '-'} sub={`적용 ${minutesToHM(comp.effectiveStartMin)}`} />
+            <StatTile label="퇴근 가능" value={minutesToHM(comp.expectedOutMin)} color={t.success} sub={remaining > 0 ? `${minutesToKor(remaining)} 남음` : '충족 ✓'} />
+            <StatTile label="위치" value={rec?.type === 'TRIP' ? '출장' : rec?.inVerified ? '확인' : '미확인'} color={rec?.type === 'TRIP' ? t.trip : rec?.inVerified ? t.success : t.warning} />
+          </Row>
+          <ProgressBar value={workedNow} max={comp.requiredMinutes} color={remaining > 0 ? undefined : [t.success, t.success]} />
+          <Muted size={12}>
+            소정근로 {minutesToKor(comp.requiredMinutes)} · 휴게 {policy.breakStart}–{policy.breakEnd}는 근로시간에서 제외
+            {remaining <= 0 ? ' · 지금 퇴근 가능 ✓' : ''}
+          </Muted>
+          {minutesOfDay(now) >= hmToMinutes(policy.breakStart) && minutesOfDay(now) < hmToMinutes(policy.breakEnd) && (
+            <Muted size={12}>🍽️ 현재 휴게시간입니다.</Muted>
+          )}
+        </Card>
+      )}
 
-        {state === 'done' && (
-          <>
-            <SectionRow label="오늘 근무 완료" />
-            <Row style={{ gap: 10 }}>
-              <StatTile label="출근" value={rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '-'} />
-              <StatTile label="퇴근" value={rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '-'} />
-              <StatTile
-                label="실근로"
-                value={minutesToKor(comp.workedMinutes)}
-                color={comp.diffMinutes >= 0 ? t.success : t.danger}
-                sub={`${comp.diffMinutes >= 0 ? '초과 +' : '부족 '}${minutesToKor(comp.diffMinutes)}`}
-              />
+      {state === 'done' && (
+        <Card>
+          <Text style={{ fontWeight: '700', color: t.text }}>오늘 근무 완료 🎉</Text>
+          <Row style={{ gap: 10 }}>
+            <StatTile label="출근" value={rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '-'} sub={`적용 ${minutesToHM(comp.effectiveStartMin)}`} />
+            <StatTile label="퇴근" value={rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '-'} />
+            <StatTile
+              label="실근로"
+              value={minutesToKor(comp.workedMinutes)}
+              color={comp.diffMinutes >= 0 ? t.success : t.danger}
+              sub={`${comp.diffMinutes >= 0 ? '초과 +' : '부족 '}${minutesToKor(comp.diffMinutes)}`}
+            />
+          </Row>
+          {comp.labels.length > 0 && (
+            <Row style={{ flexWrap: 'wrap' }}>
+              {comp.labels.map((l) => (
+                <Badge key={l} text={l} color={/부족|미충족|지각|미기록/.test(l) ? t.danger : /연차|출장/.test(l) ? t.trip : t.textDim} />
+              ))}
             </Row>
-            {comp.labels.length > 0 && (
-              <Row style={{ flexWrap: 'wrap' }}>
-                {comp.labels.map((l) => (
-                  <Badge key={l} text={l} color={/부족|미충족|지각|미기록|오류/.test(l) ? t.danger : t.textDim} />
-                ))}
-              </Row>
-            )}
-          </>
-        )}
-      </Card>
+          )}
+        </Card>
+      )}
 
       {/* 위치 메시지 */}
       {geoMsg ? (
@@ -241,61 +254,32 @@ export default function Today() {
         </Card>
       ) : null}
 
-      {/* 액션 버튼 */}
+      {/* 액션 */}
       {state === 'before' && !comp.isFullLeave && (
         <>
-          <Button label="출근하기" variant="success" loading={busy} onPress={() => doCheckIn(trip ? 'TRIP' : 'WORK')} />
-          <Row style={{ justifyContent: 'space-between' }}>
-            <Muted>출장 모드 (근무지 반경 검증 생략)</Muted>
-            <Pressable onPress={() => setTrip((v) => !v)}>
-              <View
-                style={{
-                  width: 52,
-                  height: 30,
-                  borderRadius: 999,
-                  backgroundColor: trip ? t.trip : t.border,
-                  padding: 3,
-                  alignItems: trip ? 'flex-end' : 'flex-start',
-                }}
-              >
-                <View style={{ width: 24, height: 24, borderRadius: 999, backgroundColor: '#fff' }} />
+          <Button label="출근하기" icon="🟢" variant="success" loading={busy} onPress={() => doCheckIn(trip ? 'TRIP' : 'WORK')} />
+          <Card>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <View style={{ flex: 1 }}>
+                <Body style={{ fontWeight: '600' }}>출장 모드</Body>
+                <Muted size={12}>근무지 반경 검증을 생략합니다</Muted>
               </View>
-            </Pressable>
-          </Row>
+              <Switch value={trip} onValueChange={setTrip} color={t.trip} />
+            </Row>
+          </Card>
         </>
       )}
 
-      {state === 'working' && <Button label="퇴근하기" variant="danger" loading={busy} onPress={doCheckOut} />}
+      {state === 'working' && <Button label="퇴근하기" icon="🔴" variant="danger" loading={busy} onPress={doCheckOut} />}
 
-      {state === 'done' && (
-        <Button label="이력 보기" variant="outline" onPress={() => router.push('/(tabs)/history')} />
-      )}
+      {state === 'done' && <Button label="이력 보기" variant="outline" onPress={() => router.push('/(tabs)/history')} />}
 
       {s.pendingSync > 0 && (
         <Row style={{ justifyContent: 'center' }}>
-          <Muted size={12}>동기화 대기 {s.pendingSync}건 · 설정에서 동기화</Muted>
+          <Muted size={12}>☁️ 동기화 대기 {s.pendingSync}건 · 설정에서 동기화</Muted>
         </Row>
       )}
+      <Divider />
     </Screen>
-  );
-}
-
-function SectionRow({ label, children }: { label: string; children?: React.ReactNode }) {
-  const t = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-      <Text style={{ fontSize: 15, fontWeight: '700', color: t.textDim }}>{label}</Text>
-      {children}
-    </View>
-  );
-}
-
-function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
-  const t = useTheme();
-  const pct = max > 0 ? Math.min(1, value / max) : 0;
-  return (
-    <View style={{ height: 10, backgroundColor: t.cardAlt, borderRadius: 999, overflow: 'hidden' }}>
-      <View style={{ width: `${pct * 100}%`, height: '100%', backgroundColor: color }} />
-    </View>
   );
 }

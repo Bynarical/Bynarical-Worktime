@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { View, Text } from 'react-native';
 import {
   Screen,
+  Hero,
   Card,
-  Title,
   Muted,
   Body,
   Button,
@@ -90,26 +90,29 @@ export default function Leave() {
 
   return (
     <Screen>
-      <Title>연차 관리</Title>
-
-      {/* 잔액 */}
+      {/* 잔액 히어로 */}
       {balance && (
-        <Card>
-          <Row style={{ justifyContent: 'space-between' }}>
-            <Text style={{ fontWeight: '700', color: t.text }}>내 연차</Text>
-            <Badge text={hoursToDayLabel(balance.remainingHours, policy.fullDayHours) + ' 남음'} color={t.success} />
+        <Hero>
+          <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>내 연차 잔여</Text>
+            <Badge text="🌴 연차" color="#fff" soft="rgba(255,255,255,0.2)" />
           </Row>
-          <Row style={{ gap: 10, flexWrap: 'wrap' }}>
-            <StatTile label="발생" value={hoursToDayLabel(balance.entitledHours)} sub={`${balance.entitledHours}h`} />
-            <StatTile label="사용" value={hoursToDayLabel(balance.usedHours)} sub={`${balance.usedHours}h`} color={t.trip} />
-            <StatTile label="대기" value={hoursToDayLabel(balance.pendingHours)} sub={`${balance.pendingHours}h`} color={t.warning} />
-            <StatTile label="잔여" value={hoursToDayLabel(balance.remainingHours)} sub={`${balance.remainingHours}h`} color={t.primary} />
+          <Text style={{ color: '#fff', fontSize: 40, fontWeight: '800', letterSpacing: -1 }}>
+            {hoursToDayLabel(balance.remainingHours, policy.fullDayHours)}
+          </Text>
+          <Row style={{ gap: 8 }}>
+            <StatTile onHero label="발생" value={hoursToDayLabel(balance.entitledHours)} sub={`${balance.entitledHours}h`} />
+            <StatTile onHero label="사용" value={hoursToDayLabel(balance.usedHours)} sub={`${balance.usedHours}h`} />
+            <StatTile onHero label="대기" value={hoursToDayLabel(balance.pendingHours)} sub={`${balance.pendingHours}h`} />
           </Row>
-          <Divider />
-          <Muted size={12}>{balance.accrual.basis}</Muted>
-          {balance.adjustmentHours !== 0 && <Muted size={12}>관리자 조정: {balance.adjustmentHours > 0 ? '+' : ''}{balance.adjustmentHours}h</Muted>}
-          {!s.user?.hireDate && <Muted size={12}><Text style={{ color: t.warning }}>입사일이 없습니다. 설정에서 입사일을 등록하면 연차가 자동 계산됩니다.</Text></Muted>}
-        </Card>
+          <Text style={{ color: t.onHeroDim, fontSize: 12 }}>{balance.accrual.basis}</Text>
+          {balance.adjustmentHours !== 0 && (
+            <Text style={{ color: t.onHeroDim, fontSize: 12 }}>관리자 조정: {balance.adjustmentHours > 0 ? '+' : ''}{balance.adjustmentHours}h</Text>
+          )}
+        </Hero>
+      )}
+      {!s.user?.hireDate && (
+        <Card><Muted size={12} style={{ color: t.warning }}>입사일이 없습니다. 설정에서 입사일을 등록하면 연차가 자동 계산됩니다.</Muted></Card>
       )}
 
       {/* 신청 폼 */}
