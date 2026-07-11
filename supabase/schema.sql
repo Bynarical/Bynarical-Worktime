@@ -134,6 +134,24 @@ end;
 $$;
 grant execute on function public.login_email_for_name(text) to anon, authenticated;
 
+-- 보안: is_admin 은 관리자만 변경 가능 (비관리자가 자기 자신을 관리자로 승격하는 것 방지)
+create or replace function public.protect_is_admin()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.is_admin is distinct from old.is_admin and not public.is_admin() then
+    new.is_admin := old.is_admin;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_protect_is_admin on public.profiles;
+create trigger trg_protect_is_admin before update on public.profiles
+  for each row execute function public.protect_is_admin();
+
 -- ============================================================
 -- 가입 시 프로필 자동 생성 (회원가입 메타데이터에서 이름/사번 등 추출)
 -- ============================================================

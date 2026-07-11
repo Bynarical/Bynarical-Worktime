@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   TextInputProps,
+  useWindowDimensions,
   View,
   ViewStyle,
 } from 'react-native';
@@ -20,15 +21,26 @@ export { useTheme } from '@/lib/theme';
 
 export function Screen({ children, scroll = true }: { children: React.ReactNode; scroll?: boolean }) {
   const t = useTheme();
-  const inner = <View style={{ padding: 16, gap: 14, paddingBottom: 56 }}>{children}</View>;
+  const { width } = useWindowDimensions();
+  const wide = width >= 820; // 데스크탑/태블릿 가로
+  const inner = (
+    <View style={{ width: '100%', maxWidth: wide ? 960 : undefined, padding: wide ? 24 : 16, gap: 14, paddingBottom: 56 }}>
+      {children}
+    </View>
+  );
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={['top']}>
       {scroll ? (
-        <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          style={{ flex: 1 }}
+          contentContainerStyle={{ alignItems: 'center' }}
+          showsVerticalScrollIndicator={false}
+        >
           {inner}
         </ScrollView>
       ) : (
-        <View style={{ flex: 1 }}>{inner}</View>
+        <View style={{ flex: 1, alignItems: 'center' }}>{inner}</View>
       )}
     </SafeAreaView>
   );

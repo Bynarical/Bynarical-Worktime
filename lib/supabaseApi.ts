@@ -165,7 +165,9 @@ export async function updateProfileRow(userId: string, patch: Partial<User>) {
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.empNo !== undefined) row.emp_no = patch.empNo || null;
   if (patch.hireDate !== undefined) row.hire_date = patch.hireDate || null;
-  await sb().from('profiles').update(row).eq('id', userId);
+  if (patch.isAdmin !== undefined) row.is_admin = patch.isAdmin;
+  const { error } = await sb().from('profiles').update(row).eq('id', userId);
+  if (error) throw error;
 }
 
 // ---------- 근태 기록 ----------

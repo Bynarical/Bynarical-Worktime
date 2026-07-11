@@ -14,6 +14,7 @@ import {
   KV,
   StatTile,
   Field,
+  Switch,
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
@@ -317,6 +318,22 @@ function AdminApproval() {
             </Row>
             {infoMsg ? <Muted size={12} style={{ color: infoMsg.startsWith('✓') ? t.success : t.danger }}>{infoMsg}</Muted> : null}
             <Button label="직원 정보 저장" variant="primary" small onPress={saveInfo} />
+            <Divider />
+            <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Body style={{ fontWeight: '600' }}>관리자 권한</Body>
+                <Muted size={12}>{adjUser === s.user?.id ? '본인 권한은 해제할 수 없습니다' : '이 직원을 관리자로 지정/해제'}</Muted>
+              </View>
+              <Switch
+                value={!!s.profilesById[adjUser]?.isAdmin}
+                color={t.trip}
+                onValueChange={(v) => {
+                  if (adjUser === s.user?.id) { setInfoMsg('본인 관리자 권한은 해제할 수 없습니다.'); return; }
+                  s.adminUpdateProfile(adjUser, { isAdmin: v });
+                  setInfoMsg(v ? '✓ 관리자로 지정' : '✓ 관리자 해제');
+                }}
+              />
+            </Row>
             <Divider />
             <Row style={{ alignItems: 'flex-end' }}>
               <View style={{ flex: 1 }}><Field label="연차 조정(h) · 양수=부여, 음수=차감" value={adjHours} onChangeText={setAdjHours} placeholder="예: 8 또는 -2" keyboardType="numbers-and-punctuation" /></View>
