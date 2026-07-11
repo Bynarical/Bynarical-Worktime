@@ -198,18 +198,20 @@ function AdminApproval() {
   const s = useStore();
   const t = useTheme();
   const pending = s.leaves.filter((l) => l.status === 'REQUESTED');
+  const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p }));
   const [adjUser, setAdjUser] = useState('');
   const [adjHours, setAdjHours] = useState('');
   const [adjMsg, setAdjMsg] = useState('');
 
   async function grant() {
     const h = parseFloat(adjHours);
-    if (!adjUser.trim() || Number.isNaN(h)) {
-      setAdjMsg('사용자 ID와 시간을 입력하세요.');
+    if (!adjUser || Number.isNaN(h)) {
+      setAdjMsg('직원과 시간을 선택/입력하세요.');
       return;
     }
-    await s.addAdjustment(adjUser.trim(), h, '관리자 조정');
-    setAdjMsg(`✓ ${adjUser} 에 ${h}h 조정 반영`);
+    await s.addAdjustment(adjUser, h, '관리자 조정');
+    const nm = s.profilesById[adjUser]?.name || adjUser;
+    setAdjMsg(`✓ ${nm} 에 ${h}h 조정 반영`);
     setAdjHours('');
   }
 
@@ -236,8 +238,16 @@ function AdminApproval() {
 
       <Card>
         <Text style={{ fontWeight: '700', color: t.text }}>연차 수동 조정</Text>
-        <Muted size={12}>사용자 ID(사번 있으면 u_사번, 없으면 u_해시)에 시간을 가감합니다. 양수=부여, 음수=차감.</Muted>
-        <Field label="사용자 ID" value={adjUser} onChangeText={setAdjUser} placeholder="u_2024001" autoCapitalize="none" />
+        <Muted size={12}>직원을 선택하고 시간을 가감합니다. 양수=부여, 음수=차감.</Muted>
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.textDim, fontSize: 12.5, fontWeight: '600' }}>직원</Text>
+          <Row style={{ flexWrap: 'wrap' }}>
+            {employees.length === 0 && <Muted size={12}>직원 목록이 없습니다</Muted>}
+            {employees.map((e) => (
+              <Chip key={e.id} label={`${e.name}${e.empNo ? ` (${e.empNo})` : ''}`} active={adjUser === e.id} onPress={() => setAdjUser(e.id)} small />
+            ))}
+          </Row>
+        </View>
         <Field label="시간(h)" value={adjHours} onChangeText={setAdjHours} placeholder="예: 8 또는 -2" keyboardType="numbers-and-punctuation" />
         {adjMsg ? <Muted size={12}>{adjMsg}</Muted> : null}
         <Button label="조정 적용" variant="primary" small onPress={grant} />

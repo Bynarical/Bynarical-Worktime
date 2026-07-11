@@ -273,12 +273,6 @@ export default function Today() {
       {state === 'working' && <Button label="퇴근하기" icon="🔴" variant="danger" loading={busy} onPress={doCheckOut} />}
 
       {state === 'done' && <Button label="이력 보기" variant="outline" onPress={() => router.push('/(tabs)/history')} />}
-
-      {s.pendingSync > 0 && (
-        <Row style={{ justifyContent: 'center' }}>
-          <Muted size={12}>☁️ 동기화 대기 {s.pendingSync}건 · 설정에서 동기화</Muted>
-        </Row>
-      )}
       <Divider />
     </Screen>
   );

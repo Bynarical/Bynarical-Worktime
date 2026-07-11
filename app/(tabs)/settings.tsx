@@ -59,7 +59,6 @@ function ProfileCard() {
   const [empNo, setEmpNo] = useState(s.user?.empNo || '');
   const [hireDate, setHireDate] = useState(s.user?.hireDate || '');
   const [msg, setMsg] = useState('');
-  const [curPw, setCurPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
 
@@ -74,10 +73,10 @@ function ProfileCard() {
 
   async function doChangePw() {
     setPwMsg('');
-    if (newPw.length < 4) return setPwMsg('새 비밀번호는 4자 이상이어야 합니다.');
-    const ok = await s.changePassword(curPw, newPw);
-    if (!ok) return setPwMsg('현재 비밀번호가 올바르지 않습니다.');
-    setCurPw(''); setNewPw(''); setPwMsg('✓ 비밀번호가 변경되었습니다.');
+    if (newPw.length < 6) return setPwMsg('새 비밀번호는 6자 이상이어야 합니다.');
+    const r = await s.changePassword(newPw);
+    if (!r.ok) return setPwMsg(r.error || '변경 실패');
+    setNewPw(''); setPwMsg('✓ 비밀번호가 변경되었습니다.');
   }
 
   return (
@@ -90,8 +89,7 @@ function ProfileCard() {
       <Button label="프로필 저장" variant="primary" small onPress={save} />
       <Divider />
       <Text style={{ fontWeight: '700', color: t.textDim }}>비밀번호 변경</Text>
-      <Field label="현재 비밀번호" value={curPw} onChangeText={setCurPw} secureTextEntry />
-      <Field label="새 비밀번호" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="4자 이상" />
+      <Field label="새 비밀번호" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="6자 이상" />
       {pwMsg ? <Muted size={12}>{pwMsg}</Muted> : null}
       <Button label="비밀번호 변경" variant="neutral" small onPress={doChangePw} />
     </Card>
@@ -162,29 +160,16 @@ function WorkplacesCard() {
 }
 
 function AdminCard() {
-  const s = useStore();
-  const t = useTheme();
-  const [pw, setPw] = useState('');
-  const [msg, setMsg] = useState('');
-
-  async function unlock() {
-    const ok = await s.verifyAdmin(pw);
-    setMsg(ok ? '' : '비밀번호가 올바르지 않습니다.');
-    setPw('');
-  }
-
-  if (!s.adminUnlocked) {
+  const s = useTheme();
+  const store = useStore();
+  if (!store.adminUnlocked) {
     return (
       <Card>
-        <Row><Badge text="관리자 설정" color={t.trip} /></Row>
-        <Muted size={12}>{s.hasAdminPassword ? '관리자 비밀번호를 입력하세요.' : '최초 비밀번호를 설정하면 관리자로 잠금 해제됩니다.'}</Muted>
-        <Field label={s.hasAdminPassword ? '관리자 비밀번호' : '새 관리자 비밀번호'} value={pw} onChangeText={setPw} secureTextEntry />
-        {msg ? <Muted size={12}><Text style={{ color: t.danger }}>{msg}</Text></Muted> : null}
-        <Button label={s.hasAdminPassword ? '확인' : '비밀번호 설정'} variant="primary" small onPress={unlock} />
+        <Row><Badge text="관리자 설정" color={s.trip} /></Row>
+        <Muted size={12}>관리자 계정이 아닙니다. 관리자 권한은 Supabase에서 부여됩니다.</Muted>
       </Card>
     );
   }
-
   return <AdminUnlocked />;
 }
 
@@ -206,7 +191,6 @@ function AdminUnlocked() {
     baseDays: String(lp.baseAnnualDays),
     maxDays: String(lp.maxAnnualDays),
   });
-  const [newPw, setNewPw] = useState('');
   const [msg, setMsg] = useState('');
   const set = (k: string) => (v: string) => setF((p) => ({ ...p, [k]: v }));
 
@@ -233,11 +217,8 @@ function AdminUnlocked() {
 
   return (
     <Card>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Row><Badge text="관리자" color={t.trip} /><Text style={{ fontWeight: '800', color: t.text }}>근무·연차 정책</Text></Row>
-        <Button label="잠금" variant="neutral" small onPress={s.lockAdmin} />
-      </Row>
-      <Muted size={12}>근로계약서 제4조 5항: 회사는 휴게시간을 조정할 수 있습니다.</Muted>
+      <Row><Badge text="관리자" color={t.trip} /><Text style={{ fontWeight: '800', color: t.text }}>근무·연차 정책</Text></Row>
+      <Muted size={12}>근로계약서 제4조 5항: 회사는 휴게시간을 조정할 수 있습니다. (전 직원 공통 적용)</Muted>
 
       <Row><View style={{ flex: 1 }}><Field label="코어 시작" value={f.coreStart} onChangeText={set('coreStart')} /></View><View style={{ flex: 1 }}><Field label="코어 종료" value={f.coreEnd} onChangeText={set('coreEnd')} /></View></Row>
       <Row><View style={{ flex: 1 }}><Field label="최소 출근" value={f.earliestClockIn} onChangeText={set('earliestClockIn')} /></View><View style={{ flex: 1 }}><Field label="최대 출근" value={f.latestClockIn} onChangeText={set('latestClockIn')} /></View></Row>
@@ -246,11 +227,6 @@ function AdminUnlocked() {
       <Row><View style={{ flex: 1 }}><Field label="연차 기본(일)" value={f.baseDays} onChangeText={set('baseDays')} keyboardType="number-pad" /></View><View style={{ flex: 1 }}><Field label="연차 상한(일)" value={f.maxDays} onChangeText={set('maxDays')} keyboardType="number-pad" /></View></Row>
       {msg ? <Muted size={12}>{msg}</Muted> : null}
       <Button label="정책 저장" variant="primary" small onPress={saveWork} />
-
-      <Divider />
-      <Text style={{ fontWeight: '700', color: t.text }}>관리자 비밀번호 변경</Text>
-      <Field label="새 비밀번호" value={newPw} onChangeText={setNewPw} secureTextEntry />
-      <Button label="비밀번호 변경" variant="neutral" small onPress={async () => { if (newPw) { await s.setAdminPassword(newPw); setNewPw(''); setMsg('✓ 비밀번호가 변경되었습니다.'); } }} />
     </Card>
   );
 }
@@ -258,19 +234,24 @@ function AdminUnlocked() {
 function SyncCard() {
   const s = useStore();
   const t = useTheme();
-  const [url, setUrl] = useState(s.settings.sheetsUrl || '');
   const [msg, setMsg] = useState('');
-
   return (
     <Card>
-      <Row><Badge text="동기화" color={t.primary} />{s.pendingSync > 0 && <Badge text={`대기 ${s.pendingSync}건`} color={t.warning} />}</Row>
-      <Field label="Google Apps Script 웹앱 URL" value={url} onChangeText={setUrl} placeholder="https://script.google.com/macros/s/.../exec" autoCapitalize="none" />
-      <Row>
-        <Button label="URL 저장" variant="neutral" small style={{ flex: 1 }} onPress={async () => { await s.setSheetsUrl(url.trim()); setMsg('✓ 저장'); }} />
-        <Button label="지금 동기화" variant="primary" small style={{ flex: 1 }} onPress={async () => { await s.sync(); setMsg('동기화 시도 완료'); }} />
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Row><Badge text="동기화" color={t.primary} /></Row>
+        <Badge text={s.needsConfig ? '미연결' : '● Supabase 연결됨'} color={s.needsConfig ? t.danger : t.success} />
       </Row>
+      <Muted size={12}>데이터는 Supabase(Postgres)에 저장되고 권한(RLS)으로 보호됩니다. 여러 기기에서 자동 동기화됩니다.</Muted>
+      <Button
+        label="새로고침"
+        variant="neutral"
+        small
+        onPress={async () => {
+          await s.refresh();
+          setMsg('✓ 최신 데이터로 갱신했습니다.');
+        }}
+      />
       {msg ? <Muted size={12}>{msg}</Muted> : null}
-      <Muted size={11}>서버가 없어도 앱은 정상 동작하며, 기록은 기기에 저장됩니다.</Muted>
     </Card>
   );
 }
