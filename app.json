@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "BYnarical Worktime",
-    "slug": "BYnarical-Worktime",
+    "name": "Bynarical Worktime",
+    "slug": "Bynarical-Worktime",
     "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -39,7 +39,7 @@
       ]
     ],
     "experiments": {
-      "baseUrl": "/BYnarical-Worktime"
+      "baseUrl": "/Bynarical-Worktime"
     }
   }
 }

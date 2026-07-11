@@ -1,5 +1,5 @@
 /**
- * BYnarical Worktime — Google Apps Script 백엔드
+ * Bynarical Worktime — Google Apps Script 백엔드
  * ------------------------------------------------------------------
  * 하나의 Google 스프레드시트를 DB로 사용한다. 아래 시트 탭을 자동 생성한다.
  *   - Settings       : 키/값 (adminPasswordHash 등)

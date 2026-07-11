@@ -1,9 +1,9 @@
-# BYnarical Worktime 🕒
+# Bynarical Worktime 🕒
 
 코어타임 근무제 · 위치 기반 근태 · 연차(반반차) 관리 앱.
 Expo(React Native) 기반으로 **웹 + iOS + Android** 를 하나의 코드베이스로 지원합니다.
 
-> 이전 `BYnarical-Attendance`(위치 기반 출퇴근)를 근로계약서 **제4조(코어타임)** · **제6조(연차·반반차)** 에 맞춰 재구축·확장한 v2.
+> 이전 `Bynarical-Attendance`(위치 기반 출퇴근)를 근로계약서 **제4조(코어타임)** · **제6조(연차·반반차)** 에 맞춰 재구축·확장한 v2.
 
 ## 주요 기능
 

@@ -1,4 +1,4 @@
-// 도메인 타입 정의 (BYnarical Worktime)
+// 도메인 타입 정의 (Bynarical Worktime)
 // 근태 + 연차(반반차) + 코어타임 근무제
 
 export interface GeoPoint {

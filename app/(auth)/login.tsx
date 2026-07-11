@@ -32,7 +32,7 @@ export default function Login() {
       <View style={{ height: 40 }} />
       <View style={{ alignItems: 'center', gap: 6, marginBottom: 8 }}>
         <Text style={{ fontSize: 40 }}>🕒</Text>
-        <Title>BYnarical Worktime</Title>
+        <Title>Bynarical Worktime</Title>
         <Muted>코어타임 근무제 · 위치 기반 근태 · 연차 관리</Muted>
       </View>
 

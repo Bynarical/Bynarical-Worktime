@@ -34,7 +34,7 @@ export default function Settings() {
       <DataCard />
       <Card>
         <Text style={{ fontWeight: '700', color: t.text }}>정보</Text>
-        <KV k="앱" v="BYnarical Worktime v2" />
+        <KV k="앱" v="Bynarical Worktime v2" />
         <KV k="근무제" v={`코어타임 ${s.settings.workPolicy.coreStart}–${s.settings.workPolicy.coreEnd}`} />
         <Muted size={11}>근로계약서 제4조(코어타임)·제6조(연차/반반차) 반영</Muted>
       </Card>
