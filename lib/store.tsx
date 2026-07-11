@@ -23,8 +23,8 @@ import {
   WorkPolicy,
   LeavePolicy,
 } from './types';
-import { chainHash, sha256 } from './hash';
-import { dateKey } from './time';
+import { chainHash, sha256, randomSalt, hashPassword } from './hash';
+import { dateKey, ceilTimeToStep } from './time';
 import * as backend from './backend';
 
 function uid(prefix: string): string {
@@ -47,15 +47,19 @@ interface StoreValue {
   adminUnlocked: boolean;
   hasAdminPassword: boolean;
   pendingSync: number;
+  authed: boolean; // 세션 로그인 여부
+  hasAccount: boolean; // 이 기기에 등록된 계정 존재
 
   // auth
-  login: (name: string, empNo?: string, hireDate?: string) => Promise<void>;
+  register: (args: { name: string; empNo?: string; hireDate?: string; password: string }) => Promise<void>;
+  login: (password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  resetAccount: () => Promise<void>;
+  changePassword: (oldPw: string, newPw: string) => Promise<boolean>;
   updateProfile: (patch: Partial<User>) => Promise<void>;
 
   // attendance
   todayRecord: () => AttendanceRecord | undefined;
-  setPlannedStart: (hm: string) => Promise<void>;
   checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean }) => Promise<void>;
   checkOut: (args: { point?: GeoPoint; within?: boolean }) => Promise<void>;
   clearAllRecords: () => Promise<void>;
@@ -105,11 +109,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [adminPwHash, setAdminPwHash] = useState<string | null>(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pendingSync, setPendingSync] = useState(0);
+  const [authed, setAuthed] = useState(false);
 
   // 최초 로드
   useEffect(() => {
     (async () => {
-      const [u, sRaw, rec, lv, adj, conf, pw, sheetsUrl] = await Promise.all([
+      const [u, sRaw, rec, lv, adj, conf, pw, sheetsUrl, session] = await Promise.all([
         getItem<User>(STORAGE_KEYS.USER),
         getItem<any>(STORAGE_KEYS.SETTINGS),
         getItem<AttendanceRecord[]>(STORAGE_KEYS.RECORDS),
@@ -118,6 +123,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         getItem<Confirmation[]>(STORAGE_KEYS.CONFIRMATIONS),
         getItem<string>(STORAGE_KEYS.ADMIN_PASSWORD),
         getItem<string>(STORAGE_KEYS.SHEETS_URL),
+        getItem<boolean>(STORAGE_KEYS.SESSION),
       ]);
 
       // 기존 데이터 호환: settings가 workplaces 배열만 갖고 있던 경우 보정
@@ -129,6 +135,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
 
       setUser(u);
+      // 구버전 계정(비밀번호 없음)은 자동 로그인 유지, 신규는 세션 플래그 따름
+      setAuthed(!!session && !!u);
       setSettings(merged);
       setRecords(rec || []);
       setLeaves(lv || []);
@@ -174,8 +182,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const bumpPending = async () => setPendingSync(await backend.pendingCount());
 
   // ---- auth ----
-  const login = async (name: string, empNo?: string, hireDate?: string) => {
+  const register: StoreValue['register'] = async ({ name, empNo, hireDate, password }) => {
     const admins = (empNo || '').toLowerCase() === 'admin';
+    const salt = randomSalt();
     const u: User = {
       id: slugId(name, empNo),
       name: name.trim(),
@@ -183,15 +192,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       hireDate: hireDate || undefined,
       isAdmin: admins,
       createdAt: new Date().toISOString(),
+      salt,
+      passwordHash: hashPassword(password, salt),
     };
     setUser(u);
+    setAuthed(true);
     await setItem(STORAGE_KEYS.USER, u);
+    await setItem(STORAGE_KEYS.SESSION, true);
   };
+
+  const login = async (password: string): Promise<boolean> => {
+    if (!user) return false;
+    // 비밀번호가 설정된 계정만 검증. 구버전(해시 없음)은 통과.
+    if (user.passwordHash && user.salt) {
+      if (hashPassword(password, user.salt) !== user.passwordHash) return false;
+    }
+    setAuthed(true);
+    await setItem(STORAGE_KEYS.SESSION, true);
+    return true;
+  };
+
   const logout = async () => {
-    setUser(null);
+    setAuthed(false);
     setAdminUnlocked(false);
+    await removeItem(STORAGE_KEYS.SESSION);
+  };
+
+  // 계정 자체를 초기화(자격증명 제거) → 등록 화면으로. 기록/연차 데이터는 남는다.
+  const resetAccount = async () => {
+    setAuthed(false);
+    setAdminUnlocked(false);
+    setUser(null);
+    await removeItem(STORAGE_KEYS.SESSION);
     await removeItem(STORAGE_KEYS.USER);
   };
+
+  const changePassword = async (oldPw: string, newPw: string): Promise<boolean> => {
+    if (!user) return false;
+    if (user.passwordHash && user.salt && hashPassword(oldPw, user.salt) !== user.passwordHash) {
+      return false;
+    }
+    const salt = randomSalt();
+    const u = { ...user, salt, passwordHash: hashPassword(newPw, salt) };
+    setUser(u);
+    await setItem(STORAGE_KEYS.USER, u);
+    return true;
+  };
+
   const updateProfile = async (patch: Partial<User>) => {
     if (!user) return;
     const u = { ...user, ...patch };
@@ -207,35 +254,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const lastHash = (arr: { hash?: string }[]) => (arr.length ? arr[arr.length - 1].hash || '' : '');
 
-  const setPlannedStart = async (hm: string) => {
-    if (!user) return;
-    const d = dateKey();
-    const idx = records.findIndex((r) => r.userId === user.id && r.date === d);
-    let next = [...records];
-    if (idx >= 0) {
-      next[idx] = { ...next[idx], plannedStart: hm, updatedAt: new Date().toISOString() };
-    } else {
-      next.push({
-        id: uid('rec'),
-        userId: user.id,
-        userName: user.name,
-        empNo: user.empNo,
-        date: d,
-        plannedStart: hm,
-        type: 'WORK',
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    await persistRecords(next);
-    await setItem(STORAGE_KEYS.PLANNED_START, hm);
-  };
-
   const checkIn: StoreValue['checkIn'] = async ({ type, point, workplace, within }) => {
     if (!user) return;
     const d = dateKey();
-    const nowIso = new Date().toISOString();
+    const nowMsVal = new Date().getTime();
+    const nowIso = new Date(nowMsVal).toISOString();
     const idx = records.findIndex((r) => r.userId === user.id && r.date === d);
-    let base: AttendanceRecord =
+    const base0: AttendanceRecord =
       idx >= 0
         ? { ...records[idx] }
         : {
@@ -247,10 +272,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             type,
             updatedAt: nowIso,
           };
-    base = {
-      ...base,
+    // 코어타임 근무제: 출근 시각을 30분 단위로 올림하여 적용 출근시각 자동 설정
+    // (예: 08:20 출근 → 08:30 시작). 이미 출근 기록이 있으면 유지.
+    const step = settings.workPolicy.clockInStepMinutes || 30;
+    const plannedStart = base0.plannedStart || ceilTimeToStep(nowMsVal, step);
+    const base: AttendanceRecord = {
+      ...base0,
       type,
-      checkIn: base.checkIn || nowIso, // 이미 출근했으면 유지
+      checkIn: base0.checkIn || nowIso, // 이미 출근했으면 유지
+      plannedStart,
       inLocation: point,
       inVerified: within,
       workplaceId: workplace?.id,
@@ -437,11 +467,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       adminUnlocked,
       hasAdminPassword: !!adminPwHash,
       pendingSync,
+      authed,
+      hasAccount: !!user,
+      register,
       login,
       logout,
+      resetAccount,
+      changePassword,
       updateProfile,
       todayRecord,
-      setPlannedStart,
       checkIn,
       checkOut,
       clearAllRecords,
@@ -462,7 +496,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       sync,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, user, settings, records, leaves, adjustments, confirmations, adminUnlocked, adminPwHash, pendingSync]
+    [ready, user, settings, records, leaves, adjustments, confirmations, adminUnlocked, adminPwHash, pendingSync, authed]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

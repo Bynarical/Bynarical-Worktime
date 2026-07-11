@@ -1,6 +1,6 @@
 // 근태 도메인 로직 — 코어타임 근무제(근로계약서 제4조) 반영.
 import { AttendanceRecord, LeaveRequest, WorkPolicy } from './types';
-import { hmToMinutes, minutesOfDay, minutesToHM, weekday } from './time';
+import { ceilToStep, hmToMinutes, minutesOfDay, minutesToHM, weekday } from './time';
 
 export interface Interval {
   s: number; // 분(자정 기준)
@@ -34,47 +34,41 @@ export function intervalsLength(segs: Interval[]): number {
   return segs.reduce((sum, s) => sum + (s.e - s.s), 0);
 }
 
-// 계획 근무 종료시각(분): 시작 + 소정근로 + (구간 내 휴게)
-export function plannedEndMinutes(startMin: number, policy: WorkPolicy): number {
+// 근무 종료시각(분): 시작 + workMin + (구간 내 휴게). 휴게가 걸치면 뒤로 밀린다.
+export function workEndMinutes(startMin: number, workMin: number, policy: WorkPolicy): number {
   const bS = hmToMinutes(policy.breakStart);
   const bE = hmToMinutes(policy.breakEnd);
-  let end = startMin + policy.dailyWorkMinutes;
-  // 휴게가 근무구간에 걸치면 그만큼 뒤로 밀린다(최대 2회 수렴).
+  let end = startMin + workMin;
   for (let i = 0; i < 3; i++) {
     const ov = overlap({ s: startMin, e: end }, { s: bS, e: bE });
-    const newEnd = startMin + policy.dailyWorkMinutes + ov;
+    const newEnd = startMin + workMin + ov;
     if (Math.abs(newEnd - end) < 0.01) break;
     end = newEnd;
   }
   return end;
 }
 
-// 승인된 연차로 인한 "부재(off) 구간" 계산 (분)
-export function leaveOffIntervals(
-  leaves: LeaveRequest[],
-  plannedStartMin: number,
-  plannedEndMin: number
-): { intervals: Interval[]; leaveMinutes: number } {
-  const intervals: Interval[] = [];
-  let leaveMinutes = 0;
+// 계획 근무 종료(소정근로 기준)
+export function plannedEndMinutes(startMin: number, policy: WorkPolicy): number {
+  return workEndMinutes(startMin, policy.dailyWorkMinutes, policy);
+}
+
+// 승인 연차로 인한 코어타임 내 "부재(off)" 구간 (코어 창 기준)
+export function coreOffIntervals(leaves: LeaveRequest[], policy: WorkPolicy): Interval[] {
+  const coreS = hmToMinutes(policy.coreStart);
+  const coreE = hmToMinutes(policy.coreEnd);
+  const out: Interval[] = [];
   for (const lv of leaves) {
     if (lv.status !== 'APPROVED') continue;
     const h = lv.hours * 60;
-    leaveMinutes += h;
-    if (lv.segment === 'FULL') {
-      intervals.push({ s: plannedStartMin, e: plannedEndMin });
-    } else if (lv.segment === 'AM') {
-      intervals.push({ s: plannedStartMin, e: plannedStartMin + h });
-    } else if (lv.segment === 'PM') {
-      intervals.push({ s: plannedEndMin - h, e: plannedEndMin });
-    } else if (lv.segment === 'CUSTOM' && lv.startTime && lv.endTime) {
-      intervals.push({ s: hmToMinutes(lv.startTime), e: hmToMinutes(lv.endTime) });
-    } else {
-      // 시간만 있는 경우 오전으로 간주
-      intervals.push({ s: plannedStartMin, e: plannedStartMin + h });
-    }
+    if (lv.segment === 'FULL') out.push({ s: coreS, e: coreE });
+    else if (lv.segment === 'AM') out.push({ s: coreS, e: coreS + h });
+    else if (lv.segment === 'PM') out.push({ s: coreE - h, e: coreE });
+    else if (lv.segment === 'CUSTOM' && lv.startTime && lv.endTime)
+      out.push({ s: Math.max(coreS, hmToMinutes(lv.startTime)), e: Math.min(coreE, hmToMinutes(lv.endTime)) });
+    else out.push({ s: coreS, e: coreS + h });
   }
-  return { intervals, leaveMinutes };
+  return out.filter((iv) => iv.e > iv.s);
 }
 
 export interface DayComputation {
@@ -94,15 +88,14 @@ export interface DayComputation {
   diffMinutes: number; // worked - required (음수=부족, 양수=초과)
   isWorkday: boolean;
   isFullLeave: boolean;
+  effectiveStartMin: number; // 적용 출근시각(반올림)
   flags: {
-    late: boolean; // 지각(기대 출근 초과)
+    late: boolean; // 지각(적용 출근이 최대 출근시각 초과)
     coreViolation: boolean; // 코어타임 미충족
     earlyLeave: boolean; // 조기 퇴근
     insufficient: boolean; // 근로시간 부족
     overtime: boolean; // 초과 근무
     missingClockOut: boolean; // 퇴근 미기록
-    plannedStepInvalid: boolean; // 출근시각 30분 단위 아님
-    inTooEarly: boolean; // 최소 출근시각 이전
   };
   labels: string[]; // 표시용 한글 라벨
 }
@@ -119,56 +112,63 @@ export function computeDay(
   const wd = dateStr ? weekday(dayMs) : 1;
   const isWorkday = policy.workdays.includes(wd);
 
-  const plannedStartMin = hmToMinutes(record?.plannedStart || policy.latestClockIn);
-  const plannedEndMin = plannedEndMinutes(plannedStartMin, policy);
-
-  const { intervals: offIntervals, leaveMinutes } = leaveOffIntervals(
-    leaves,
-    plannedStartMin,
-    plannedEndMin
-  );
-  const isFullLeave =
-    leaves.some((l) => l.status === 'APPROVED' && l.segment === 'FULL') ||
-    leaveMinutes >= policy.dailyWorkMinutes;
+  const step = policy.clockInStepMinutes || 30;
+  const latest = hmToMinutes(policy.latestClockIn);
 
   const checkInMin = record?.checkIn != null ? minutesOfDay(Date.parse(record.checkIn)) : null;
-  let checkOutMin = record?.checkOut != null ? minutesOfDay(Date.parse(record.checkOut)) : null;
+  const checkOutMin = record?.checkOut != null ? minutesOfDay(Date.parse(record.checkOut)) : null;
   const hasCheckIn = checkInMin != null;
   const hasCheckOut = checkOutMin != null;
 
-  // 진행중(퇴근 전)이면 현재 시각까지로 임시 계산
-  const effOutMin = checkOutMin != null ? checkOutMin : opts.nowMin != null ? opts.nowMin : null;
+  // 적용 출근시각: 기록값 우선 → 없으면 실제 출근을 step 단위 올림 → 그래도 없으면 최대 출근시각
+  const plannedStartMin =
+    record?.plannedStart != null
+      ? hmToMinutes(record.plannedStart)
+      : checkInMin != null
+      ? ceilToStep(checkInMin, step)
+      : latest;
+  const effectiveStartMin = checkInMin != null ? Math.max(checkInMin, plannedStartMin) : plannedStartMin;
 
+  // 연차 집계
+  let leaveMinutes = 0;
+  let amLeaveMin = 0;
+  for (const l of leaves) {
+    if (l.status !== 'APPROVED') continue;
+    leaveMinutes += l.hours * 60;
+    if (l.segment === 'AM') amLeaveMin += l.hours * 60;
+  }
+  const isFullLeave =
+    leaves.some((l) => l.status === 'APPROVED' && l.segment === 'FULL') ||
+    leaveMinutes >= policy.dailyWorkMinutes;
+  const requiredMinutes = Math.max(0, policy.dailyWorkMinutes - leaveMinutes);
+
+  const plannedEndMin = plannedEndMinutes(plannedStartMin, policy);
+  // 퇴근 가능 시각 = 적용 출근 + 소정근로(연차 차감) + 걸치는 휴게
+  const expectedOutMin = workEndMinutes(effectiveStartMin, requiredMinutes, policy);
+  const expectedInMin = plannedStartMin;
+
+  // 진행중(퇴근 전)이면 현재 시각까지
+  const effOutMin = checkOutMin != null ? checkOutMin : opts.nowMin != null ? opts.nowMin : null;
   const bS = hmToMinutes(policy.breakStart);
   const bE = hmToMinutes(policy.breakEnd);
 
   let workedMinutes = 0;
   let breakDeducted = 0;
-  if (checkInMin != null && effOutMin != null && effOutMin > checkInMin) {
-    const span = { s: checkInMin, e: effOutMin };
+  if (effOutMin != null && effOutMin > effectiveStartMin) {
+    const span = { s: effectiveStartMin, e: effOutMin };
     breakDeducted = overlap(span, { s: bS, e: bE });
-    workedMinutes = effOutMin - checkInMin - breakDeducted;
+    workedMinutes = Math.max(0, effOutMin - effectiveStartMin - breakDeducted);
   }
 
-  const requiredMinutes = Math.max(0, policy.dailyWorkMinutes - leaveMinutes);
-
-  // 기대 출근/퇴근 (연차 off 반영)
-  const leadOff = offIntervals
-    .filter((iv) => iv.s <= plannedStartMin + 0.01)
-    .reduce((mx, iv) => Math.max(mx, iv.e), plannedStartMin);
-  const trailOff = offIntervals
-    .filter((iv) => iv.e >= plannedEndMin - 0.01)
-    .reduce((mn, iv) => Math.min(mn, iv.s), plannedEndMin);
-  const expectedInMin = isFullLeave ? plannedStartMin : leadOff;
-  const expectedOutMin = isFullLeave ? plannedStartMin : trailOff;
-
-  // 코어타임 유효 구간 = 코어 - off
+  // 코어타임 유효 구간 = 코어창 - 연차 off
   const effectiveCore = subtract(
     { s: hmToMinutes(policy.coreStart), e: hmToMinutes(policy.coreEnd) },
-    offIntervals
+    coreOffIntervals(leaves, policy)
   );
 
-  // 플래그
+  // AM 연차만큼 출근 허용시각을 뒤로 미룬다
+  const allowedClockIn = latest + amLeaveMin;
+
   const flags = {
     late: false,
     coreViolation: false,
@@ -176,25 +176,16 @@ export function computeDay(
     insufficient: false,
     overtime: false,
     missingClockOut: false,
-    plannedStepInvalid: false,
-    inTooEarly: false,
   };
 
   if (!isFullLeave && isWorkday) {
-    if (record?.plannedStart && hmToMinutes(record.plannedStart) % policy.clockInStepMinutes !== 0) {
-      flags.plannedStepInvalid = true;
-    }
-    if (hasCheckIn && checkInMin != null) {
-      if (checkInMin > expectedInMin + 0.01) flags.late = true;
-      if (checkInMin < hmToMinutes(policy.earliestClockIn) - 0.01) flags.inTooEarly = true;
-    }
+    if (hasCheckIn && plannedStartMin > allowedClockIn + 0.01) flags.late = true;
     if (hasCheckIn && !hasCheckOut) flags.missingClockOut = true;
 
     if (hasCheckOut && checkOutMin != null) {
       if (checkOutMin < expectedOutMin - 0.01) flags.earlyLeave = true;
-      // 코어타임: 출근~퇴근 구간이 유효 코어를 모두 포함하는지
       const covered = effectiveCore.every(
-        (c) => checkInMin != null && checkInMin <= c.s + 0.01 && checkOutMin! >= c.e - 0.01
+        (c) => checkInMin != null && checkInMin <= c.s + 0.01 && checkOutMin >= c.e - 0.01
       );
       if (effectiveCore.length > 0 && !covered) flags.coreViolation = true;
       if (workedMinutes < requiredMinutes - 0.01) flags.insufficient = true;
@@ -213,7 +204,6 @@ export function computeDay(
   if (flags.missingClockOut) labels.push('퇴근 미기록');
   if (flags.insufficient) labels.push('근로부족');
   if (flags.overtime) labels.push('초과근무');
-  if (flags.plannedStepInvalid) labels.push('출근단위 오류');
   if (record?.type === 'TRIP') labels.push('출장');
 
   return {
@@ -224,6 +214,7 @@ export function computeDay(
     checkOutMin,
     plannedStartMin,
     plannedEndMin,
+    effectiveStartMin,
     expectedInMin,
     expectedOutMin,
     workedMinutes,

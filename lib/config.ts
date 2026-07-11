@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
   LEAVE_ADJUSTMENTS: 'att_leave_adjustments',
   SYNC_QUEUE: 'att_sync_queue',
   PLANNED_START: 'att_planned_start',
+  SESSION: 'att_session',
 } as const;
 
 // 색상 팔레트 (기존 앱과 동일 + 다크 대응 확장)

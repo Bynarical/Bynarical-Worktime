@@ -50,6 +50,9 @@ function ProfileCard() {
   const [empNo, setEmpNo] = useState(s.user?.empNo || '');
   const [hireDate, setHireDate] = useState(s.user?.hireDate || '');
   const [msg, setMsg] = useState('');
+  const [curPw, setCurPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [pwMsg, setPwMsg] = useState('');
 
   async function save() {
     if (hireDate && !/^\d{4}-\d{2}-\d{2}$/.test(hireDate)) {
@@ -60,6 +63,14 @@ function ProfileCard() {
     setMsg('✓ 저장되었습니다.');
   }
 
+  async function doChangePw() {
+    setPwMsg('');
+    if (newPw.length < 4) return setPwMsg('새 비밀번호는 4자 이상이어야 합니다.');
+    const ok = await s.changePassword(curPw, newPw);
+    if (!ok) return setPwMsg('현재 비밀번호가 올바르지 않습니다.');
+    setCurPw(''); setNewPw(''); setPwMsg('✓ 비밀번호가 변경되었습니다.');
+  }
+
   return (
     <Card>
       <Row><Badge text="프로필" color={t.primary} />{s.user?.isAdmin && <Badge text="관리자 계정" color={t.trip} />}</Row>
@@ -68,6 +79,12 @@ function ProfileCard() {
       <Field label="입사일 (연차 계산)" value={hireDate} onChangeText={setHireDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
       {msg ? <Muted size={12}>{msg}</Muted> : null}
       <Button label="프로필 저장" variant="primary" small onPress={save} />
+      <Divider />
+      <Text style={{ fontWeight: '700', color: t.textDim }}>비밀번호 변경</Text>
+      <Field label="현재 비밀번호" value={curPw} onChangeText={setCurPw} secureTextEntry />
+      <Field label="새 비밀번호" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="4자 이상" />
+      {pwMsg ? <Muted size={12}>{pwMsg}</Muted> : null}
+      <Button label="비밀번호 변경" variant="neutral" small onPress={doChangePw} />
     </Card>
   );
 }
@@ -100,28 +117,37 @@ function WorkplacesCard() {
 
   return (
     <Card>
-      <Row><Badge text="근무지 관리" color={t.primary} /></Row>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Row><Badge text="근무지" color={t.primary} /></Row>
+        {!s.adminUnlocked && <Badge text="관리자 전용" color={t.textDim} />}
+      </Row>
       {s.settings.workplaces.length === 0 && <Muted>등록된 근무지가 없습니다</Muted>}
       {s.settings.workplaces.map((w) => (
         <View key={w.id} style={{ gap: 4 }}>
           <Divider />
           <Row style={{ justifyContent: 'space-between' }}>
             <Body style={{ fontWeight: '600' }}>{w.name}</Body>
-            <Button label="삭제" variant="danger" small onPress={() => s.removeWorkplace(w.id)} />
+            {s.adminUnlocked && <Button label="삭제" variant="danger" small onPress={() => s.removeWorkplace(w.id)} />}
           </Row>
           <Muted size={12}>{w.lat.toFixed(5)}, {w.lng.toFixed(5)} · 반경 {w.radius}m</Muted>
         </View>
       ))}
-      <Divider />
-      <Text style={{ fontWeight: '700', color: t.textDim }}>+ 근무지 추가</Text>
-      <Field label="근무지 이름" value={name} onChangeText={setName} placeholder="예: 본사" />
-      <Field label="좌표 또는 Google Maps 링크" value={coords} onChangeText={setCoords} placeholder="37.561, 126.828" autoCapitalize="none" />
-      <Field label="반경 (m)" value={radius} onChangeText={setRadius} keyboardType="number-pad" />
-      {msg ? <Muted size={12}>{msg}</Muted> : null}
-      <Row>
-        <Button label="📍 현재 위치로" variant="outline" small style={{ flex: 1 }} onPress={useCurrent} />
-        <Button label="추가" variant="primary" small style={{ flex: 1 }} onPress={add} />
-      </Row>
+      {s.adminUnlocked ? (
+        <>
+          <Divider />
+          <Text style={{ fontWeight: '700', color: t.textDim }}>+ 근무지 추가</Text>
+          <Field label="근무지 이름" value={name} onChangeText={setName} placeholder="예: 본사" />
+          <Field label="좌표 또는 Google Maps 링크" value={coords} onChangeText={setCoords} placeholder="37.561, 126.828" autoCapitalize="none" />
+          <Field label="반경 (m)" value={radius} onChangeText={setRadius} keyboardType="number-pad" />
+          {msg ? <Muted size={12}>{msg}</Muted> : null}
+          <Row>
+            <Button label="📍 현재 위치로" variant="outline" small style={{ flex: 1 }} onPress={useCurrent} />
+            <Button label="추가" variant="primary" small style={{ flex: 1 }} onPress={add} />
+          </Row>
+        </>
+      ) : (
+        <Muted size={12}>근무지 등록·수정·삭제는 관리자만 할 수 있습니다. (아래 관리자 설정에서 잠금 해제)</Muted>
+      )}
     </Card>
   );
 }

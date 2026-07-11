@@ -115,4 +115,14 @@ export function isOnStep(hm: string, stepMin: number): boolean {
   return hmToMinutes(hm) % stepMin === 0;
 }
 
+// 분을 step 단위로 올림 (예: 8:20 → step30 → 8:30)
+export function ceilToStep(minutes: number, stepMin: number): number {
+  return Math.ceil(minutes / stepMin) * stepMin;
+}
+
+// 특정 시각(ms)의 시:분을 step 단위로 올림한 "HH:MM"
+export function ceilTimeToStep(ms: number, stepMin: number, offsetMin: number = KST_OFFSET_MIN): string {
+  return minutesToHM(ceilToStep(minutesOfDay(ms, offsetMin), stepMin));
+}
+
 export const TZ = { KST_OFFSET_MIN };

@@ -98,3 +98,17 @@ export function chainHash(prevHash: string, payload: Record<string, unknown>): s
 export function shortHash(h?: string): string {
   return h ? h.slice(0, 12) : '';
 }
+
+// 랜덤 salt (hex)
+export function randomSalt(): string {
+  let s = '';
+  for (let i = 0; i < 4; i++) s += Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+  return s;
+}
+
+// 비밀번호 해시: salt + 키 스트레칭(반복 SHA-256). 평문은 저장/전송하지 않는다.
+export function hashPassword(password: string, salt: string, iterations = 1200): string {
+  let h = sha256(salt + '|' + password);
+  for (let i = 0; i < iterations; i++) h = sha256(h + salt);
+  return h;
+}

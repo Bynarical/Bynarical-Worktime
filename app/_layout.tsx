@@ -9,7 +9,7 @@ import { StoreProvider, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 
 function Gate() {
-  const { ready, user } = useStore();
+  const { ready, authed } = useStore();
   const segments = useSegments();
   const router = useRouter();
   const t = useTheme();
@@ -17,9 +17,9 @@ function Gate() {
   React.useEffect(() => {
     if (!ready) return;
     const inAuth = segments[0] === '(auth)';
-    if (!user && !inAuth) router.replace('/(auth)/login');
-    else if (user && inAuth) router.replace('/(tabs)');
-  }, [ready, user, segments]);
+    if (!authed && !inAuth) router.replace('/(auth)/login');
+    else if (authed && inAuth) router.replace('/(tabs)');
+  }, [ready, authed, segments]);
 
   if (!ready) {
     return (

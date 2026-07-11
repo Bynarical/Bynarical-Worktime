@@ -22,6 +22,8 @@ export interface User {
   hireDate?: string; // 입사일 YYYY-MM-DD (연차 산정)
   isAdmin?: boolean;
   createdAt: string; // ISO
+  passwordHash?: string; // salt+반복 SHA-256 (평문 저장 안 함)
+  salt?: string;
 }
 
 // ---- 근태 기록 ----
