@@ -50,7 +50,7 @@ interface StoreValue {
   leaves: LeaveRequest[];
   adjustments: LeaveAdjustment[];
   confirmations: Confirmation[];
-  profilesById: Record<string, { name: string; empNo?: string }>;
+  profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>;
   adminUnlocked: boolean;
 
   register: (a: RegisterArgs) => Promise<AuthResult>;
@@ -58,6 +58,7 @@ interface StoreValue {
   logout: () => Promise<void>;
   changePassword: (newPw: string) => Promise<AuthResult>;
   updateProfile: (patch: Partial<User>) => Promise<void>;
+  adminUpdateProfile: (userId: string, patch: { name?: string; empNo?: string; hireDate?: string }) => Promise<void>;
   refresh: () => Promise<void>;
 
   checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean }) => Promise<void>;
@@ -94,7 +95,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [adjustments, setAdjustments] = useState<LeaveAdjustment[]>([]);
   const [confirmations, setConfirmations] = useState<Confirmation[]>([]);
-  const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string }>>({});
+  const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>>({});
 
   const needsConfig = !isSupabaseConfigured;
 
@@ -227,6 +228,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setUser(u);
     await setItem(STORAGE_KEYS.USER, u);
     if (supabase) await api.updateProfileRow(user.id, patch).catch(() => {});
+  };
+
+  // 관리자: 다른 직원(또는 본인)의 프로필 수정 (입사일 등). RLS가 is_admin 확인.
+  const adminUpdateProfile = async (userId: string, patch: { name?: string; empNo?: string; hireDate?: string }) => {
+    if (supabase) await api.updateProfileRow(userId, patch).catch((e) => console.warn('admin profile', e));
+    setProfilesById((prev) => ({
+      ...prev,
+      [userId]: {
+        name: patch.name ?? prev[userId]?.name ?? '',
+        empNo: patch.empNo ?? prev[userId]?.empNo,
+        hireDate: patch.hireDate ?? prev[userId]?.hireDate,
+        isAdmin: prev[userId]?.isAdmin,
+      },
+    }));
+    if (userId === user?.id) {
+      const u = { ...user!, ...patch };
+      setUser(u);
+      await setItem(STORAGE_KEYS.USER, u);
+    }
   };
 
   // ---- helpers ----
@@ -396,6 +416,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       logout,
       changePassword,
       updateProfile,
+      adminUpdateProfile,
       refresh,
       checkIn,
       checkOut,

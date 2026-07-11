@@ -145,10 +145,18 @@ export async function fetchProfile(userId: string): Promise<User | null> {
   };
 }
 
-export async function fetchProfilesMap(): Promise<Record<string, { name: string; empNo?: string }>> {
-  const { data } = await sb().from('profiles').select('id,name,emp_no');
-  const map: Record<string, { name: string; empNo?: string }> = {};
-  (data || []).forEach((p: any) => (map[p.id] = { name: p.name, empNo: p.emp_no || undefined }));
+export interface ProfileBrief {
+  name: string;
+  empNo?: string;
+  hireDate?: string;
+  isAdmin?: boolean;
+}
+export async function fetchProfilesMap(): Promise<Record<string, ProfileBrief>> {
+  const { data } = await sb().from('profiles').select('id,name,emp_no,hire_date,is_admin');
+  const map: Record<string, ProfileBrief> = {};
+  (data || []).forEach(
+    (p: any) => (map[p.id] = { name: p.name, empNo: p.emp_no || undefined, hireDate: p.hire_date || undefined, isAdmin: !!p.is_admin })
+  );
   return map;
 }
 

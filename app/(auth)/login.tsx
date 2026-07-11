@@ -14,7 +14,6 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [empNo, setEmpNo] = useState('');
-  const [hireDate, setHireDate] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [err, setErr] = useState('');
@@ -27,11 +26,10 @@ export default function Login() {
     setErr(''); setInfo('');
     if (!name.trim()) return setErr('이름을 입력해주세요.');
     if (!emailOk(email)) return setErr('올바른 이메일을 입력해주세요.');
-    if (hireDate && !/^\d{4}-\d{2}-\d{2}$/.test(hireDate)) return setErr('입사일 형식은 YYYY-MM-DD 입니다.');
     if (password.length < 6) return setErr('비밀번호는 6자 이상이어야 합니다.');
     if (password !== password2) return setErr('비밀번호가 일치하지 않습니다.');
     setBusy(true);
-    const r = await s.register({ email, password, name, empNo, hireDate: hireDate || undefined });
+    const r = await s.register({ email, password, name, empNo });
     setBusy(false);
     if (!r.ok) return setErr(r.error || '가입에 실패했습니다.');
     if (r.needConfirm) return setInfo('가입 완료! 이메일 인증 링크를 확인한 뒤 로그인하세요.');
@@ -85,7 +83,7 @@ export default function Login() {
           <>
             <Field label="이름" value={name} onChangeText={setName} placeholder="홍길동" />
             <Field label="사번 (선택)" value={empNo} onChangeText={setEmpNo} placeholder="예: 2024001" autoCapitalize="none" />
-            <Field label="입사일 (선택, 연차 계산)" value={hireDate} onChangeText={setHireDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+            <Muted size={12}>입사일(연차 계산)은 가입 후 관리자가 등록합니다.</Muted>
           </>
         )}
 

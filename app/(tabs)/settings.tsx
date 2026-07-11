@@ -57,17 +57,12 @@ function ProfileCard() {
   const t = useTheme();
   const [name, setName] = useState(s.user?.name || '');
   const [empNo, setEmpNo] = useState(s.user?.empNo || '');
-  const [hireDate, setHireDate] = useState(s.user?.hireDate || '');
   const [msg, setMsg] = useState('');
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
 
   async function save() {
-    if (hireDate && !/^\d{4}-\d{2}-\d{2}$/.test(hireDate)) {
-      setMsg('입사일 형식은 YYYY-MM-DD 입니다.');
-      return;
-    }
-    await s.updateProfile({ name: name.trim(), empNo: empNo.trim() || undefined, hireDate: hireDate || undefined });
+    await s.updateProfile({ name: name.trim(), empNo: empNo.trim() || undefined });
     setMsg('✓ 저장되었습니다.');
   }
 
@@ -84,7 +79,7 @@ function ProfileCard() {
       <Row><Badge text="프로필" color={t.primary} />{s.user?.isAdmin && <Badge text="관리자 계정" color={t.trip} />}</Row>
       <Field label="이름" value={name} onChangeText={setName} />
       <Field label="사번" value={empNo} onChangeText={setEmpNo} autoCapitalize="none" />
-      <Field label="입사일 (연차 계산)" value={hireDate} onChangeText={setHireDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+      <KV k="입사일 (연차 계산)" v={s.user?.hireDate || '미등록 · 관리자 설정'} vColor={s.user?.hireDate ? undefined : t.textFaint} />
       {msg ? <Muted size={12}>{msg}</Muted> : null}
       <Button label="프로필 저장" variant="primary" small onPress={save} />
       <Divider />
