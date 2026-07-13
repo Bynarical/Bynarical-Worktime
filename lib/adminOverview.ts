@@ -75,11 +75,14 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
   else if (isFullLeave) status = 'LEAVE';
   else status = 'ABSENT';
 
-  // 미서명 주 (기록이 있는 주 중 확인 서명이 없는 주)
+  // 미서명 주 (기록이 있는 지난 주 중 확인 서명이 없는 주).
+  // 진행 중인 이번 주는 아직 서명할 수 없으므로 제외한다.
+  const currentWeek = weekStartKey(inp.today);
   const weekSet = new Set<string>();
   recs.forEach((r) => weekSet.add(weekStartKey(r.date)));
   let unsignedWeeks = 0;
   weekSet.forEach((ws) => {
+    if (ws >= currentWeek) return; // 이번 주 및 이후는 경고 대상 아님
     const signed = inp.confirmations.some((c) => c.userId === id && c.weekStart === ws);
     if (!signed) unsignedWeeks += 1;
   });
