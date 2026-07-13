@@ -74,8 +74,6 @@ interface StoreValue {
   changePassword: (newPw: string) => Promise<AuthResult>;
   verifyPassword: (password: string) => Promise<boolean>;
   passwordChanged: boolean; // 초기 비밀번호에서 변경했는지
-  leaveSeenAt: string; // 연차 결과 마지막 확인 시각(ISO)
-  markLeavesSeen: () => Promise<void>;
   updateProfile: (patch: Partial<User>) => Promise<void>;
   adminUpdateProfile: (userId: string, patch: { name?: string; empNo?: string; hireDate?: string; isAdmin?: boolean }) => Promise<void>;
   refresh: () => Promise<void>;
@@ -138,8 +136,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [consents, setConsents] = useState<LocationConsent[]>([]);
   // 초기 비밀번호에서 한 번이라도 변경했는지 (auth user_metadata.password_changed)
   const [passwordChanged, setPasswordChanged] = useState(true);
-  // 직원이 연차 승인/반려 결과를 마지막으로 확인한 시각 (미확인 배지용)
-  const [leaveSeenAt, setLeaveSeenAt] = useState<string>('');
 
   const needsConfig = !isSupabaseConfigured;
 
@@ -166,8 +162,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (cConf) setConfirmations(cConf);
       if (cSet) setSettings({ ...DEFAULT_SETTINGS, ...cSet });
       if (cAdj) setAdjustments(cAdj);
-      const seen = await getItem<string>(STORAGE_KEYS.LEAVE_SEEN);
-      if (seen) setLeaveSeenAt(seen);
 
       if (!supabase) {
         setReady(true);
@@ -308,13 +302,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const { error } = await temp.auth.signInWithPassword({ email, password });
     await temp.auth.signOut().catch(() => {});
     return !error;
-  };
-
-  // 직원이 연차 결과(승인/반려)를 확인함 → 미확인 배지 초기화
-  const markLeavesSeen = async () => {
-    const now = new Date().toISOString();
-    setLeaveSeenAt(now);
-    await setItem(STORAGE_KEYS.LEAVE_SEEN, now);
   };
 
   const updateProfile = async (patch: Partial<User>) => {
@@ -731,8 +718,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       changePassword,
       verifyPassword,
       passwordChanged,
-      leaveSeenAt,
-      markLeavesSeen,
       updateProfile,
       adminUpdateProfile,
       refresh,
@@ -765,7 +750,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateLeavePolicy,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, consents, passwordChanged, leaveSeenAt]
+    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, consents, passwordChanged]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
