@@ -81,10 +81,16 @@ interface StoreValue {
   clearAllRecords: () => Promise<void>;
   adminApproveAttendance: (recordId: string) => Promise<void>;
   adminRejectAttendance: (recordId: string) => Promise<void>;
+  // 관리자 대리 편집(직원 근태)
+  adminSaveRecord: (userId: string, date: string, fields: { checkIn?: string | null; checkOut?: string | null; plannedStart?: string; type?: AttendanceType; note?: string }) => Promise<void>;
+  adminDeleteRecord: (id: string) => Promise<void>;
 
   requestLeave: (req: { date: string; hours: LeaveUnit; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
   cancelLeave: (id: string) => Promise<void>;
   decideLeave: (id: string, approve: boolean, note?: string) => Promise<void>;
+  // 관리자 대리 편집(직원 연차)
+  adminAddLeave: (userId: string, req: { date: string; hours: LeaveUnit; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
+  adminDeleteLeave: (id: string) => Promise<void>;
   addAdjustment: (userId: string, hours: number, note?: string) => Promise<void>;
 
   addConfirmation: (c: Omit<Confirmation, 'id' | 'prevHash' | 'hash'>) => Promise<void>;
@@ -381,6 +387,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase) await api.adminDeleteRecord(recordId).catch((e) => console.warn('reject rec', e));
   };
 
+  // 관리자 대리 편집: 직원 근무기록 추가/수정 (대상 직원 id로 저장)
+  const adminSaveRecord: StoreValue['adminSaveRecord'] = async (targetUserId, date, fields) => {
+    const targetName = profilesById[targetUserId]?.name;
+    const existing = records.find((r) => r.userId === targetUserId && r.date === date);
+    const nowIso = new Date().toISOString();
+    const rec: AttendanceRecord = {
+      ...existing,
+      id: existing?.id || uid('rec'),
+      userId: targetUserId,
+      userName: targetName,
+      date,
+      type: fields.type ?? existing?.type ?? 'WORK',
+      checkIn: fields.checkIn === null ? undefined : fields.checkIn ?? existing?.checkIn,
+      checkOut: fields.checkOut === null ? undefined : fields.checkOut ?? existing?.checkOut,
+      plannedStart: fields.plannedStart ?? existing?.plannedStart,
+      pending: false,
+      note: fields.note !== undefined ? fields.note : existing?.note ?? '관리자 수정',
+      updatedAt: nowIso,
+    };
+    const chain = records.filter((r) => r.userId === targetUserId && r.id !== rec.id);
+    rec.prevHash = lastHash(chain);
+    rec.hash = chainHash(rec.prevHash, rec as any);
+    setRecords((prev) => [...prev.filter((r) => r.id !== rec.id), rec]);
+    if (supabase) await api.upsertRecord(rec, targetUserId).catch((e) => console.warn('admin save rec', e));
+  };
+  const adminDeleteRecord: StoreValue['adminDeleteRecord'] = async (id) => {
+    setRecords((prev) => prev.filter((r) => r.id !== id));
+    if (supabase) await api.adminDeleteRecord(id).catch((e) => console.warn('admin del rec', e));
+  };
+
   // ---- leave ----
   const requestLeave: StoreValue['requestLeave'] = async (req) => {
     if (!user) return;
@@ -425,6 +461,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
     setLeaves((prev) => prev.map((l) => (l.id === id ? upd : l)));
     if (supabase) await api.upsertLeave(upd, target.userId).catch((e) => console.warn('decide sync', e));
+  };
+
+  // 관리자 대리 편집: 직원 연차 등록(즉시 승인) / 삭제
+  const adminAddLeave: StoreValue['adminAddLeave'] = async (targetUserId, req) => {
+    const nowIso = new Date().toISOString();
+    const lv: LeaveRequest = {
+      id: uid('lv'),
+      userId: targetUserId,
+      userName: profilesById[targetUserId]?.name,
+      date: req.date,
+      hours: req.hours,
+      segment: req.segment,
+      category: req.category ?? 'ANNUAL',
+      startTime: req.startTime,
+      endTime: req.endTime,
+      reason: req.reason ?? '관리자 등록',
+      status: 'APPROVED',
+      requestedAt: nowIso,
+      decidedAt: nowIso,
+      decidedBy: user?.name,
+    };
+    const chain = leaves.filter((l) => l.userId === targetUserId);
+    lv.prevHash = lastHash(chain);
+    lv.hash = chainHash(lv.prevHash, lv as any);
+    setLeaves((prev) => [...prev, lv]);
+    if (supabase) await api.upsertLeave(lv, targetUserId).catch((e) => console.warn('admin add leave', e));
+  };
+  const adminDeleteLeave: StoreValue['adminDeleteLeave'] = async (id) => {
+    setLeaves((prev) => prev.filter((l) => l.id !== id));
+    if (supabase) await api.deleteLeave(id).catch((e) => console.warn('admin del leave', e));
   };
 
   const addAdjustment = async (userId: string, hours: number, note?: string) => {
@@ -585,9 +651,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       clearAllRecords,
       adminApproveAttendance,
       adminRejectAttendance,
+      adminSaveRecord,
+      adminDeleteRecord,
       requestLeave,
       cancelLeave,
       decideLeave,
+      adminAddLeave,
+      adminDeleteLeave,
       addAdjustment,
       addConfirmation,
       addWorkplace,

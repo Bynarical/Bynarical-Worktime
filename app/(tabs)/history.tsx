@@ -29,6 +29,7 @@ import { shortHash } from '@/lib/hash';
 import { toCsv, exportCsv } from '@/lib/csv';
 import { AttendanceRecord } from '@/lib/types';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
+import { AdminDayEditor } from '@/components/AdminDayEditor';
 
 export default function History() {
   const s = useStore();
@@ -38,10 +39,12 @@ export default function History() {
   const [sigText, setSigText] = useState('');
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [dayView, setDayView] = useState<'calendar' | 'list'>('calendar');
+  const [editDate, setEditDate] = useState<string | null>(null);
 
   const meId = s.user?.id;
   const viewId = viewUserId ?? meId; // 관리자가 다른 직원을 볼 수 있음
   const isSelf = viewId === meId;
+  const canEdit = s.adminUnlocked; // 관리자는 조회 중인 직원의 근태를 편집 가능
   const viewName = (viewId ? s.profilesById[viewId]?.name || s.user?.name : '') || '';
   const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter(isEmployeeAccount);
 
@@ -241,20 +244,33 @@ export default function History() {
       </Row>
 
       {dayView === 'calendar' ? (
-        viewId ? <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} /> : null
+        viewId ? (
+          <AttendanceCalendar
+            userId={viewId}
+            records={s.records}
+            leaves={s.leaves}
+            policy={policy}
+            holidays={s.holidays}
+            onEditDay={canEdit ? setEditDate : undefined}
+          />
+        ) : null
       ) : (
         <>
           {dayRows.length === 0 && <Card><Muted>기록이 없습니다</Muted></Card>}
           {dayRows.map((r) => (
-            <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} />
+            <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} onEdit={canEdit ? () => setEditDate(r.date) : undefined} />
           ))}
         </>
       )}
+
+      {editDate && viewId ? (
+        <AdminDayEditor userId={viewId} userName={viewName} date={editDate} onClose={() => setEditDate(null)} />
+      ) : null}
     </Screen>
   );
 }
 
-function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; comp: DayComputation }) {
+function DayCard({ date, rec, comp, onEdit }: { date: string; rec?: AttendanceRecord; comp: DayComputation; onEdit?: () => void }) {
   const t = useTheme();
   const wd = ['일', '월', '화', '수', '목', '금', '토'][new Date(date + 'T00:00:00Z').getUTCDay()];
   const bad = comp.labels.some((l) => /부족|미충족|지각|미기록|오류/.test(l));
@@ -284,6 +300,7 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
         </Row>
       )}
       {rec?.hash ? <Muted size={11}>해시 {shortHash(rec.hash)}{bad ? '' : ''}</Muted> : null}
+      {onEdit ? <Button label="✏️ 근태 수정" variant="outline" small onPress={onEdit} /> : null}
     </Card>
   );
 }

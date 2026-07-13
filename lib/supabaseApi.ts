@@ -203,6 +203,10 @@ export async function upsertLeave(l: LeaveRequest, userId: string) {
   const { error } = await sb().from('leaves').upsert(leaveToRow(l, userId), { onConflict: 'id' });
   if (error) throw error;
 }
+export async function deleteLeave(id: string) {
+  const { error } = await sb().from('leaves').delete().eq('id', id);
+  if (error) throw error;
+}
 
 // ---------- 확인(전자서명) ----------
 export async function fetchConfirmations(): Promise<Confirmation[]> {

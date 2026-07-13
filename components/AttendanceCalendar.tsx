@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { Card, Muted, Body, Badge, Row, Divider } from '@/components/ui';
+import { Card, Muted, Body, Badge, Row, Divider, Button } from '@/components/ui';
 import { useTheme } from '@/lib/theme';
 import { computeDay, DayComputation, isNormalWorkday } from '@/lib/attendance';
 import { dateKey, minutesOfDay, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
@@ -30,12 +30,14 @@ export function AttendanceCalendar({
   leaves,
   policy,
   holidays = [],
+  onEditDay,
 }: {
   userId: string;
   records: AttendanceRecord[];
   leaves: LeaveRequest[];
   policy: WorkPolicy;
   holidays?: Holiday[];
+  onEditDay?: (date: string) => void;
 }) {
   const t = useTheme();
   const [monthOffset, setMonthOffset] = useState(0);
@@ -195,7 +197,7 @@ export function AttendanceCalendar({
       {sel && (
         <>
           <Divider />
-          <DayDetail cell={sel} />
+          <DayDetail cell={sel} onEdit={onEditDay} />
         </>
       )}
     </Card>
@@ -220,7 +222,7 @@ function Legend({ color, label, soft }: { color: string; label: string; soft?: s
   );
 }
 
-function DayDetail({ cell }: { cell: DayCell }) {
+function DayDetail({ cell, onEdit }: { cell: DayCell; onEdit?: (date: string) => void }) {
   const t = useTheme();
   const { comp, rec, date } = cell;
   const wd = WD[cell.weekday];
@@ -255,6 +257,9 @@ function DayDetail({ cell }: { cell: DayCell }) {
         </Row>
       )}
       {rec?.hash ? <Muted size={11}>해시 {shortHash(rec.hash)}</Muted> : null}
+      {onEdit ? (
+        <Button label="✏️ 근태 수정" variant="outline" small onPress={() => onEdit(date)} />
+      ) : null}
     </View>
   );
 }
