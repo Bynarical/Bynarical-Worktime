@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { Modal, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Modal, View, AppState } from 'react-native';
 import { Card, Button, Field, Muted, Body } from './ui';
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 
 // 초기(관리자 지정) 비밀번호를 아직 바꾸지 않은 사용자에게 변경을 유도하는 팝업.
-// 변경할 때까지 로그인 세션마다 다시 뜬다. ('나중에'는 이번 세션만 접어둠)
+// 변경할 때까지 계속 안내. '나중에'로 접어도 앱에 다시 돌아오면(포그라운드 복귀·재접속) 다시 뜬다.
 export function PasswordChangePrompt() {
   const s = useStore();
   const t = useTheme();
@@ -14,6 +14,14 @@ export function PasswordChangePrompt() {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [snoozed, setSnoozed] = useState(false);
+
+  // '나중에'로 접어도 앱에 다시 돌아올(포그라운드 복귀) 때마다 다시 노출
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setSnoozed(false);
+    });
+    return () => sub.remove();
+  }, []);
 
   // 관리자 계정은 비밀번호 변경 안내 예외
   if (!s.authed || s.user?.isAdmin || s.passwordChanged || snoozed) return null;
