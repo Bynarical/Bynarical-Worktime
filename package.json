@@ -34,7 +34,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "expo export --platform web --output-dir dist",
-    "deploy:web": "gh-pages -d dist -b gh-pages -t true",
+    "deploy:web": "gh-pages -d dist -b gh-pages -t",
     "typecheck": "tsc --noEmit"
   },
   "private": true
