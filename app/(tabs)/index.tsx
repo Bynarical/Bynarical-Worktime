@@ -341,20 +341,25 @@ export default function Today() {
         </Card>
       ) : null}
 
-      {/* 저녁식대 (야근 시 먹었는지만 체크) */}
+      {/* 저녁식대 (야근) — 먹었는지 토글 */}
       {state !== 'before' && !comp.isFullLeave && (
         <Card>
           <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontWeight: '700', color: t.text }}>저녁식대 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(야근)</Text></Text>
-            {todayMeal ? <Badge text="먹음 ✓" color={t.success} /> : <Muted size={12}>미체크</Muted>}
-          </Row>
-          <Muted size={12}>야근 시 저녁식대를 먹었으면 체크하세요.</Muted>
-          <Row>
-            {todayMeal ? (
-              <Button label="취소 (안 먹음)" variant="neutral" small onPress={() => s.removeMeal(todayMeal.id)} />
-            ) : (
-              <Button label="먹음 체크" variant="success" small onPress={() => s.setMeal(today, MEAL_DAILY_LIMIT)} />
-            )}
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ fontWeight: '700', color: t.text }}>저녁식대 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(야근)</Text></Text>
+              <Muted size={12}>야근하며 저녁을 드셨으면 켜세요.</Muted>
+            </View>
+            <Row style={{ gap: 8, alignItems: 'center' }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: todayMeal ? t.success : t.textFaint }}>{todayMeal ? '먹음' : '안 먹음'}</Text>
+              <Switch
+                value={!!todayMeal}
+                color={t.success}
+                onValueChange={(v) => {
+                  if (v) s.setMeal(today, MEAL_DAILY_LIMIT);
+                  else if (todayMeal) s.removeMeal(todayMeal.id);
+                }}
+              />
+            </Row>
           </Row>
         </Card>
       )}
