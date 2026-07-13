@@ -15,7 +15,8 @@ export function PasswordChangePrompt() {
   const [busy, setBusy] = useState(false);
   const [snoozed, setSnoozed] = useState(false);
 
-  if (!s.authed || s.passwordChanged || snoozed) return null;
+  // 관리자 계정은 비밀번호 변경 안내 예외
+  if (!s.authed || s.user?.isAdmin || s.passwordChanged || snoozed) return null;
 
   async function submit() {
     setMsg('');
