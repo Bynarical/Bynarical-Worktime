@@ -20,10 +20,6 @@ import { dateKey, minutesToHM, minutesToKor, minutesOfDay } from '@/lib/time';
 import { hoursToDayLabel } from '@/lib/leave';
 import { buildEmployeeOverview, EmployeeOverview, OverviewInput, TodayStatus } from '@/lib/adminOverview';
 
-function won(n: number): string {
-  return (n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '원';
-}
-
 const STATUS_META: Record<TodayStatus, { label: string; tone: 'primary' | 'success' | 'trip' | 'faint' }> = {
   WORKING: { label: '근무 중', tone: 'primary' },
   DONE: { label: '퇴근', tone: 'success' },
@@ -226,7 +222,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           <KV k="출장" v={`${o.month.tripCount}회`} />
           {!o.isAdmin && <KV k="사용 연차(이번달)" v={`${o.month.leaveMinutes / 60}h`} />}
           <KV k="미서명 주" v={o.unsignedWeeks > 0 ? `${o.unsignedWeeks}주` : '없음'} />
-          <KV k="이번달 식대" v={won(o.mealTotal)} />
+          <KV k="이번달 야근식대" v={`${o.mealDays}회`} />
           {o.balance && (
             <>
               <Divider />

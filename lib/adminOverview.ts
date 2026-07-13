@@ -23,7 +23,8 @@ export interface EmployeeOverview {
   pendingLeaveCount: number;
   unsignedWeeks: number; // 기록이 있으나 서명 안 된 주 수
   anomalyDays: number; // 이번 달 지각/코어위반/부족/미기록 발생 일수
-  mealTotal: number; // 이번 달 저녁식대 합계(원)
+  mealTotal: number; // 이번 달 저녁식대 합계(원) — 내부 참조용
+  mealDays: number; // 이번 달 야근식대 먹은 일수
   hasWarning: boolean;
 }
 
@@ -95,9 +96,9 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     : null;
 
   const pendingLeaveCount = inp.leaves.filter((l) => l.userId === id && l.status === 'REQUESTED').length;
-  const mealTotal = (inp.meals || [])
-    .filter((m) => m.userId === id && m.date.startsWith(inp.monthPrefix))
-    .reduce((sum, m) => sum + m.amount, 0);
+  const monthMeals = (inp.meals || []).filter((m) => m.userId === id && m.date.startsWith(inp.monthPrefix));
+  const mealTotal = monthMeals.reduce((sum, m) => sum + m.amount, 0);
+  const mealDays = monthMeals.length;
 
   // 관리자 계정은 입사일·연차 개념이 없으므로 그와 관련한 경고는 제외한다.
   const isAdmin = !!p?.isAdmin;
@@ -124,6 +125,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     unsignedWeeks,
     anomalyDays,
     mealTotal,
+    mealDays,
     hasWarning,
   };
 }

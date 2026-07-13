@@ -36,10 +36,6 @@ function useNow(intervalMs = 15000) {
   return now;
 }
 
-function won(n: number): string {
-  return (n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '원';
-}
-
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function Today() {
@@ -53,7 +49,6 @@ export default function Today() {
   const [trip, setTrip] = useState(false);
   const [geoMsg, setGeoMsg] = useState('');
   const [confirmOutOfRange, setConfirmOutOfRange] = useState(false);
-  const [mealCustom, setMealCustom] = useState('');
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentMsg, setConsentMsg] = useState('');
 
@@ -309,38 +304,21 @@ export default function Today() {
         </Card>
       ) : null}
 
-      {/* 저녁식대 (퇴근 시 함께 체크) */}
+      {/* 저녁식대 (야근 시 먹었는지만 체크) */}
       {state !== 'before' && !comp.isFullLeave && (
         <Card>
           <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontWeight: '700', color: t.text }}>저녁식대 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(야근)</Text></Text>
-            {todayMeal ? <Badge text={won(todayMeal.amount)} color={t.success} /> : <Muted size={12}>미사용</Muted>}
+            {todayMeal ? <Badge text="먹음 ✓" color={t.success} /> : <Muted size={12}>미체크</Muted>}
           </Row>
-          <Muted size={12}>야근 시 제공되는 저녁식대(법인카드)를 기록하세요. 하루 한도 {won(MEAL_DAILY_LIMIT)}.</Muted>
-          <Row style={{ flexWrap: 'wrap' }}>
-            {[10000, 15000, 20000].map((a) => (
-              <Chip key={a} label={won(a)} active={todayMeal?.amount === a} color={t.success} onPress={() => s.setMeal(today, a, todayMeal?.note)} />
-            ))}
-            <View style={{ flex: 1, minWidth: 100 }}>
-              <Field value={mealCustom} onChangeText={setMealCustom} placeholder="직접 입력" keyboardType="number-pad" />
-            </View>
-            <Button
-              label="기록"
-              variant="success"
-              small
-              onPress={() => {
-                const a = parseInt(mealCustom.replace(/[^\d]/g, ''), 10) || 0;
-                if (a > 0) s.setMeal(today, a, todayMeal?.note);
-                setMealCustom('');
-              }}
-            />
+          <Muted size={12}>야근 시 저녁식대를 먹었으면 체크하세요.</Muted>
+          <Row>
+            {todayMeal ? (
+              <Button label="취소 (안 먹음)" variant="neutral" small onPress={() => s.removeMeal(todayMeal.id)} />
+            ) : (
+              <Button label="먹음 체크" variant="success" small onPress={() => s.setMeal(today, MEAL_DAILY_LIMIT)} />
+            )}
           </Row>
-          {todayMeal ? (
-            <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <Muted size={12}>{won(todayMeal.amount)} 기록됨{todayMeal.note ? ` · ${todayMeal.note}` : ''}</Muted>
-              <Button label="삭제" variant="neutral" small onPress={() => s.removeMeal(todayMeal.id)} />
-            </Row>
-          ) : null}
         </Card>
       )}
 
