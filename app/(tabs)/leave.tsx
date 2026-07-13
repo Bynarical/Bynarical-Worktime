@@ -19,20 +19,26 @@ import {
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeBalance, hoursToDayLabel, validateRequest, SEGMENT_LABELS, STATUS_LABELS } from '@/lib/leave';
+import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
 import { dateKey, addDaysKey, hmToMinutes } from '@/lib/time';
-import { LeaveSegment, LeaveUnit, LeaveRequest } from '@/lib/types';
+import { LeaveSegment, LeaveUnit, LeaveRequest, LeaveCategory } from '@/lib/types';
 
 export default function Leave() {
   const s = useStore();
   const t = useTheme();
   const policy = s.settings.leavePolicy;
 
+  const leaveCtx = useMemo(
+    () => ({ records: s.records, workPolicy: s.settings.workPolicy, holidays: s.holidaySet }),
+    [s.records, s.settings.workPolicy, s.holidaySet]
+  );
   const balance = useMemo(
-    () => (s.user ? computeBalance(s.user, s.leaves, s.adjustments, policy) : null),
-    [s.user, s.leaves, s.adjustments, policy]
+    () => (s.user ? computeBalance(s.user, s.leaves, s.adjustments, policy, undefined, leaveCtx) : null),
+    [s.user, s.leaves, s.adjustments, policy, leaveCtx]
   );
 
   const [date, setDate] = useState(dateKey());
+  const [category, setCategory] = useState<LeaveCategory>('ANNUAL');
   const [segment, setSegment] = useState<LeaveSegment>('AM');
   const [hours, setHours] = useState<LeaveUnit>(2);
   const [startTime, setStartTime] = useState('13:00');
@@ -72,7 +78,11 @@ export default function Leave() {
       }
       effHours = rounded as LeaveUnit;
     }
-    const v = validateRequest(s.user, { date, hours: effHours }, s.leaves, s.adjustments, policy);
+    if (category === 'PAID' && !reason.trim()) {
+      setMsg('유급휴가는 사유(예: 예비군, 공가, 경조사)를 입력하세요.');
+      return;
+    }
+    const v = validateRequest(s.user, { date, hours: effHours, category }, s.leaves, s.adjustments, policy, leaveCtx);
     if (!v.ok) {
       setMsg(v.reason || '신청할 수 없습니다.');
       return;
@@ -81,11 +91,12 @@ export default function Leave() {
       date,
       hours: effHours,
       segment,
+      category,
       startTime: segment === 'CUSTOM' ? startTime : undefined,
       endTime: segment === 'CUSTOM' ? endTime : undefined,
       reason: reason.trim() || undefined,
     });
-    setMsg('✓ 연차 신청이 접수되었습니다.');
+    setMsg(category === 'PAID' ? '✓ 유급휴가 신청이 접수되었습니다.' : '✓ 연차 신청이 접수되었습니다.');
     setReason('');
   }
 
@@ -95,7 +106,10 @@ export default function Leave() {
       {balance && (
         <Hero>
           <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>내 연차 잔여</Text>
+            <View style={{ gap: 2 }}>
+              <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>내 연차 잔여</Text>
+              {balance.activeLabel && <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{balance.activeLabel}</Text>}
+            </View>
             <Badge text="🌴 연차" color="#fff" soft="rgba(255,255,255,0.2)" />
           </Row>
           <Text style={{ color: '#fff', fontSize: 40, fontWeight: '800', letterSpacing: -1 }}>
@@ -116,10 +130,32 @@ export default function Leave() {
         <Card><Muted size={12} style={{ color: t.warning }}>입사일이 등록되지 않았습니다. 관리자가 입사일을 등록하면 연차가 자동 계산됩니다.</Muted></Card>
       )}
 
+      {/* 연차 연도별 내역 */}
+      {balance && balance.buckets.length > 0 && <LeaveYearBreakdown buckets={balance.buckets} fullDay={policy.fullDayHours} />}
+
       {/* 신청 폼 */}
       <Card>
-        <Text style={{ fontWeight: '700', color: t.text }}>연차/반반차 신청</Text>
-        <Muted size={12}>제6조: 2시간 단위(2/4/6/8h)로 분할 사용 가능. 사용한 시간만큼 차감됩니다.</Muted>
+        <Text style={{ fontWeight: '700', color: t.text }}>휴가 신청</Text>
+        <Muted size={12}>
+          {category === 'PAID'
+            ? '유급휴가(예비군·공가·경조사 등)는 연차 잔여에서 차감되지 않습니다.'
+            : '연차: 2시간 단위(2/4/6/8h) 분할 사용, 사용한 시간만큼 차감됩니다.'}
+        </Muted>
+
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.textDim, fontSize: 13, fontWeight: '600' }}>종류</Text>
+          <Row style={{ flexWrap: 'wrap' }}>
+            <Chip label="연차" active={category === 'ANNUAL'} onPress={() => setCategory('ANNUAL')} />
+            <Chip label="유급휴가" active={category === 'PAID'} onPress={() => { setCategory('PAID'); pickSegment('FULL'); }} color={t.success} />
+          </Row>
+          {category === 'PAID' && (
+            <Row style={{ flexWrap: 'wrap' }}>
+              {['예비군', '공가', '경조사', '병가'].map((r) => (
+                <Chip key={r} label={r} active={reason === r} onPress={() => setReason(r)} small color={t.success} />
+              ))}
+            </Row>
+          )}
+        </View>
 
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.textDim, fontSize: 13, fontWeight: '600' }}>날짜</Text>
@@ -146,7 +182,7 @@ export default function Leave() {
             <Text style={{ color: t.textDim, fontSize: 13, fontWeight: '600' }}>사용 시간</Text>
             <Row>
               {([2, 4, 6] as LeaveUnit[]).map((h) => (
-                <Chip key={h} label={h === 2 ? '2h(반반차)' : h === 4 ? '4h(반차)' : '6h'} active={hours === h} onPress={() => setHours(h)} />
+                <Chip key={h} label={`${h}h`} active={hours === h} onPress={() => setHours(h)} />
               ))}
             </Row>
           </View>
@@ -159,9 +195,9 @@ export default function Leave() {
           </Row>
         )}
 
-        <Field label="사유 (선택)" value={reason} onChangeText={setReason} placeholder="예: 병원 방문" />
+        <Field label={category === 'PAID' ? '사유 (필수)' : '사유 (선택)'} value={reason} onChangeText={setReason} placeholder={category === 'PAID' ? '예: 예비군' : '예: 병원 방문'} />
         {msg ? <Muted size={13}><Text style={{ color: msg.startsWith('✓') ? t.success : t.danger }}>{msg}</Text></Muted> : null}
-        <Button label="연차 신청" variant="trip" onPress={submit} />
+        <Button label={category === 'PAID' ? '유급휴가 신청' : '연차 신청'} variant={category === 'PAID' ? 'success' : 'trip'} onPress={submit} />
       </Card>
 
       {/* 내 신청 내역 */}
@@ -170,7 +206,10 @@ export default function Leave() {
       {myLeaves.map((l) => (
         <Card key={l.id}>
           <Row style={{ justifyContent: 'space-between' }}>
-            <Body style={{ fontWeight: '700' }}>{l.date}</Body>
+            <Row style={{ gap: 6 }}>
+              <Body style={{ fontWeight: '700' }}>{l.date}</Body>
+              <Badge text={l.category === 'PAID' ? '유급휴가' : '연차'} color={l.category === 'PAID' ? t.success : t.trip} />
+            </Row>
             <StatusBadge status={l.status} />
           </Row>
           <KV k="구분 / 시간" v={`${SEGMENT_LABELS[l.segment]} · ${l.hours}시간`} />

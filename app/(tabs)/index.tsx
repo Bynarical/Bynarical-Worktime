@@ -16,6 +16,8 @@ import {
   ProgressBar,
   ProgressRing,
   Switch,
+  Chip,
+  Field,
   useTheme,
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
@@ -23,6 +25,7 @@ import { getCurrentPoint, nearestWorkplace } from '@/lib/geo';
 import { computeDay, workEndMinutes } from '@/lib/attendance';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
 import { Workplace } from '@/lib/types';
+import { MEAL_DAILY_LIMIT, CONSENT_TEXT } from '@/lib/config';
 
 function useNow(intervalMs = 15000) {
   const [now, setNow] = useState(() => new Date().getTime());
@@ -31,6 +34,10 @@ function useNow(intervalMs = 15000) {
     return () => clearInterval(id);
   }, [intervalMs]);
   return now;
+}
+
+function won(n: number): string {
+  return (n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '원';
 }
 
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
@@ -46,9 +53,23 @@ export default function Today() {
   const [trip, setTrip] = useState(false);
   const [geoMsg, setGeoMsg] = useState('');
   const [confirmOutOfRange, setConfirmOutOfRange] = useState(false);
+  const [mealCustom, setMealCustom] = useState('');
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentMsg, setConsentMsg] = useState('');
+
+  const consented = s.consents.some((c) => c.userId === s.user?.id);
+
+  async function agreeConsent() {
+    setConsentMsg('');
+    setConsentBusy(true);
+    const r = await s.recordConsent();
+    setConsentBusy(false);
+    if (!r.ok) setConsentMsg(r.error || '동의 기록에 실패했습니다.');
+  }
 
   const today = dateKey(now);
   const rec = s.records.find((r) => r.userId === s.user?.id && r.date === today);
+  const todayMeal = s.meals.find((m) => m.userId === s.user?.id && m.date === today);
   const todaysLeaves = s.leaves.filter(
     (l) => l.userId === s.user?.id && l.date === today && (l.status === 'APPROVED' || l.status === 'REQUESTED')
   );
@@ -88,9 +109,13 @@ export default function Today() {
       setBusy(false);
       return;
     }
-    await s.checkIn({ type: kind, point: point ?? undefined, workplace, within });
+    // 근무지 밖 일반 출근(출장 아님)은 관리자 승인 대기로 기록
+    const pendingApproval = kind === 'WORK' && !within;
+    await s.checkIn({ type: kind, point: point ?? undefined, workplace, within, pending: pendingApproval });
     setGeoMsg(
-      point
+      pendingApproval
+        ? `기록됨 — 근무지 반경 밖이라 관리자 승인 후 출근 처리됩니다.${point ? ` (${Math.round(dist)}m)` : ''}`
+        : point
         ? within
           ? `✓ ${workplace?.name} 반경 내 확인 (${Math.round(dist)}m)`
           : `기록됨 (반경 밖 ${Math.round(dist)}m)`
@@ -115,6 +140,25 @@ export default function Today() {
     await s.checkOut({ point: point ?? undefined, within });
     setGeoMsg(point ? `퇴근 기록됨 (${Math.round(dist)}m)` : '퇴근 기록됨 (위치 없음)');
     setBusy(false);
+  }
+
+  // 최초 출퇴근 전 위치정보 수집·이용 동의 필수
+  if (s.user && !consented) {
+    return (
+      <Screen>
+        <Hero style={{ paddingVertical: 22 }}>
+          <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '600' }}>위치정보 수집·이용 동의</Text>
+          <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>{s.user?.name}님, 시작 전 확인해주세요</Text>
+        </Hero>
+        <Card>
+          <Text style={{ fontWeight: '700', color: t.text }}>동의서</Text>
+          <Body style={{ lineHeight: 22 }}>{CONSENT_TEXT}</Body>
+          <Muted size={12}>동의하지 않으면 출퇴근 기록을 사용할 수 없습니다. 동의 시각·IP·기기 정보가 회사(관리자)에게 기록·전송됩니다.</Muted>
+          {consentMsg ? <Muted size={13} style={{ color: t.danger }}>{consentMsg}</Muted> : null}
+          <Button label="위 내용에 동의합니다" variant="primary" loading={consentBusy} onPress={agreeConsent} />
+        </Card>
+      </Screen>
+    );
   }
 
   return (
@@ -161,6 +205,17 @@ export default function Today() {
           </Text>
         </Row>
       </Hero>
+
+      {/* 승인 대기(근무지 밖 출근) */}
+      {rec?.pending && (
+        <Card style={{ borderColor: t.warning, borderWidth: 1.5 }}>
+          <Row style={{ gap: 8, alignItems: 'center' }}>
+            <Badge text="승인 대기" color={t.warning} />
+            <Body style={{ fontWeight: '700' }}>근무지 밖 출근</Body>
+          </Row>
+          <Muted size={12}>관리자가 확인·승인해야 출근으로 최종 처리됩니다.</Muted>
+        </Card>
+      )}
 
       {/* 연차 표시 */}
       {todaysLeaves.length > 0 && (
@@ -247,12 +302,47 @@ export default function Today() {
           <Muted size={13}>{geoMsg}</Muted>
           {confirmOutOfRange && (
             <Row>
-              <Button label="그래도 출근" variant="warning" small onPress={() => doCheckIn('WORK', true)} style={{ flex: 1 }} />
+              <Button label="승인요청 출근" variant="warning" small onPress={() => doCheckIn('WORK', true)} style={{ flex: 1 }} />
               <Button label="출장으로 기록" variant="trip" small onPress={() => doCheckIn('TRIP', true)} style={{ flex: 1 }} />
             </Row>
           )}
         </Card>
       ) : null}
+
+      {/* 저녁식대 (퇴근 시 함께 체크) */}
+      {state !== 'before' && !comp.isFullLeave && (
+        <Card>
+          <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontWeight: '700', color: t.text }}>저녁식대 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(야근)</Text></Text>
+            {todayMeal ? <Badge text={won(todayMeal.amount)} color={t.success} /> : <Muted size={12}>미사용</Muted>}
+          </Row>
+          <Muted size={12}>야근 시 제공되는 저녁식대(법인카드)를 기록하세요. 하루 한도 {won(MEAL_DAILY_LIMIT)}.</Muted>
+          <Row style={{ flexWrap: 'wrap' }}>
+            {[10000, 15000, 20000].map((a) => (
+              <Chip key={a} label={won(a)} active={todayMeal?.amount === a} color={t.success} onPress={() => s.setMeal(today, a, todayMeal?.note)} />
+            ))}
+            <View style={{ flex: 1, minWidth: 100 }}>
+              <Field value={mealCustom} onChangeText={setMealCustom} placeholder="직접 입력" keyboardType="number-pad" />
+            </View>
+            <Button
+              label="기록"
+              variant="success"
+              small
+              onPress={() => {
+                const a = parseInt(mealCustom.replace(/[^\d]/g, ''), 10) || 0;
+                if (a > 0) s.setMeal(today, a, todayMeal?.note);
+                setMealCustom('');
+              }}
+            />
+          </Row>
+          {todayMeal ? (
+            <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <Muted size={12}>{won(todayMeal.amount)} 기록됨{todayMeal.note ? ` · ${todayMeal.note}` : ''}</Muted>
+              <Button label="삭제" variant="neutral" small onPress={() => s.removeMeal(todayMeal.id)} />
+            </Row>
+          ) : null}
+        </Card>
+      )}
 
       {/* 액션 */}
       {state === 'before' && !comp.isFullLeave && (

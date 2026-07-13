@@ -1,6 +1,6 @@
 // 앱 전역 상태 — Supabase Auth + Postgres(RLS) 백엔드. localStorage는 오프라인 캐시.
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { DEFAULT_SETTINGS, STORAGE_KEYS } from './config';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { DEFAULT_SETTINGS, STORAGE_KEYS, MEAL_DAILY_LIMIT, CONSENT_VERSION } from './config';
 import { getItem, setItem } from './storage';
 import {
   AttendanceRecord,
@@ -10,12 +10,16 @@ import {
   LeaveAdjustment,
   LeaveRequest,
   LeaveSegment,
+  LeaveCategory,
   LeaveUnit,
   Settings,
   User,
   Workplace,
   WorkPolicy,
   LeavePolicy,
+  Holiday,
+  MealAllowance,
+  LocationConsent,
 } from './types';
 import { chainHash } from './hash';
 import { dateKey, ceilTimeToStep } from './time';
@@ -51,6 +55,10 @@ interface StoreValue {
   adjustments: LeaveAdjustment[];
   confirmations: Confirmation[];
   profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>;
+  holidays: Holiday[];
+  holidaySet: Set<string>;
+  meals: MealAllowance[];
+  consents: LocationConsent[];
   adminUnlocked: boolean;
 
   login: (name: string, password: string) => Promise<AuthResult>;
@@ -61,11 +69,13 @@ interface StoreValue {
   adminUpdateProfile: (userId: string, patch: { name?: string; empNo?: string; hireDate?: string; isAdmin?: boolean }) => Promise<void>;
   refresh: () => Promise<void>;
 
-  checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean }) => Promise<void>;
+  checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean; pending?: boolean }) => Promise<void>;
   checkOut: (args: { point?: GeoPoint; within?: boolean }) => Promise<void>;
   clearAllRecords: () => Promise<void>;
+  adminApproveAttendance: (recordId: string) => Promise<void>;
+  adminRejectAttendance: (recordId: string) => Promise<void>;
 
-  requestLeave: (req: { date: string; hours: LeaveUnit; segment: LeaveSegment; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
+  requestLeave: (req: { date: string; hours: LeaveUnit; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
   cancelLeave: (id: string) => Promise<void>;
   decideLeave: (id: string, approve: boolean, note?: string) => Promise<void>;
   addAdjustment: (userId: string, hours: number, note?: string) => Promise<void>;
@@ -74,6 +84,12 @@ interface StoreValue {
 
   addWorkplace: (wp: Omit<Workplace, 'id'>) => Promise<void>;
   removeWorkplace: (id: string) => Promise<void>;
+  adminAddHoliday: (day: string, name: string) => Promise<void>;
+  adminRemoveHoliday: (day: string) => Promise<void>;
+  adminSyncHolidays: (fromYear: number, toYear: number) => Promise<{ ok: boolean; count?: number; error?: string }>;
+  setMeal: (date: string, amount: number, note?: string) => Promise<void>;
+  removeMeal: (id: string) => Promise<void>;
+  recordConsent: () => Promise<{ ok: boolean; error?: string }>;
   updateWorkPolicy: (patch: Partial<WorkPolicy>) => Promise<void>;
   updateLeavePolicy: (patch: Partial<LeavePolicy>) => Promise<void>;
 }
@@ -96,23 +112,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [adjustments, setAdjustments] = useState<LeaveAdjustment[]>([]);
   const [confirmations, setConfirmations] = useState<Confirmation[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>>({});
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [meals, setMeals] = useState<MealAllowance[]>([]);
+  const [consents, setConsents] = useState<LocationConsent[]>([]);
 
   const needsConfig = !isSupabaseConfigured;
 
   // 오프라인 캐시 로드(즉시 페인트용)
   useEffect(() => {
     (async () => {
-      const [u, cRec, cLv, cConf, cSet, cAdj] = await Promise.all([
+      const [u, cRec, cLv, cConf, cSet, cAdj, cHol, cMeal, cCon] = await Promise.all([
         getItem<User>(STORAGE_KEYS.USER),
         getItem<AttendanceRecord[]>(STORAGE_KEYS.RECORDS),
         getItem<LeaveRequest[]>(STORAGE_KEYS.LEAVES),
         getItem<Confirmation[]>(STORAGE_KEYS.CONFIRMATIONS),
         getItem<Settings>(STORAGE_KEYS.SETTINGS),
         getItem<LeaveAdjustment[]>(STORAGE_KEYS.LEAVE_ADJUSTMENTS),
+        getItem<Holiday[]>(STORAGE_KEYS.HOLIDAYS),
+        getItem<MealAllowance[]>(STORAGE_KEYS.MEALS),
+        getItem<LocationConsent[]>(STORAGE_KEYS.CONSENTS),
       ]);
       if (u) setUser(u);
       if (cRec) setRecords(cRec);
       if (cLv) setLeaves(cLv);
+      if (cHol) setHolidays(cHol);
+      if (cMeal) setMeals(cMeal);
+      if (cCon) setConsents(cCon);
       if (cConf) setConfirmations(cConf);
       if (cSet) setSettings({ ...DEFAULT_SETTINGS, ...cSet });
       if (cAdj) setAdjustments(cAdj);
@@ -139,6 +164,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           setLeaves([]);
           setConfirmations([]);
           setAdjustments([]);
+          setMeals([]);
+          setConsents([]);
         }
       });
     })();
@@ -146,7 +173,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function loadAll(userId: string) {
-    const [me, pmap, recs, lvs, confs, wps, pol, adjs] = await Promise.all([
+    const [me, pmap, recs, lvs, confs, wps, pol, adjs, hols, mealsData, consentsData] = await Promise.all([
       api.fetchProfile(userId),
       api.fetchProfilesMap(),
       api.fetchRecords(),
@@ -155,9 +182,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       api.fetchWorkplaces(),
       api.fetchPolicies(),
       api.fetchAdjustments(),
+      api.fetchHolidays().catch(() => [] as Holiday[]),
+      api.fetchMeals().catch(() => [] as MealAllowance[]),
+      api.fetchConsents().catch(() => [] as LocationConsent[]),
     ]);
     const recs2 = recs.map((r) => ({ ...r, userName: pmap[r.userId]?.name, empNo: pmap[r.userId]?.empNo }));
     const lvs2 = lvs.map((l) => ({ ...l, userName: pmap[l.userId]?.name, empNo: pmap[l.userId]?.empNo }));
+    const meals2 = mealsData.map((m) => ({ ...m, userName: pmap[m.userId]?.name }));
     const nextSettings: Settings = { workplaces: wps, workPolicy: pol.workPolicy, leavePolicy: pol.leavePolicy };
     setUser(me);
     setProfilesById(pmap);
@@ -166,8 +197,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setConfirmations(confs);
     setSettings(nextSettings);
     setAdjustments(adjs);
+    setHolidays(hols);
+    setMeals(meals2);
+    setConsents(consentsData);
     // 캐시
     if (me) await setItem(STORAGE_KEYS.USER, me);
+    await setItem(STORAGE_KEYS.CONSENTS, consentsData);
+    await setItem(STORAGE_KEYS.MEALS, meals2);
+    await setItem(STORAGE_KEYS.HOLIDAYS, hols);
     await setItem(STORAGE_KEYS.RECORDS, recs2);
     await setItem(STORAGE_KEYS.LEAVES, lvs2);
     await setItem(STORAGE_KEYS.CONFIRMATIONS, confs);
@@ -274,7 +311,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }
 
   // ---- attendance ----
-  const checkIn: StoreValue['checkIn'] = async ({ type, point, workplace, within }) => {
+  const checkIn: StoreValue['checkIn'] = async ({ type, point, workplace, within, pending }) => {
     if (!user) return;
     const d = dateKey();
     const nowMsVal = new Date().getTime();
@@ -299,6 +336,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       plannedStart,
       inLocation: point,
       inVerified: within,
+      pending: base0.pending || !!pending,
       workplaceId: workplace?.id,
       workplaceName: workplace?.name,
       updatedAt: nowIso,
@@ -325,6 +363,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase && user) await api.deleteRecordsOf(user.id).catch(() => {});
   };
 
+  // 관리자: 근무지 밖 출근(승인 대기) 처리
+  const adminApproveAttendance = async (recordId: string) => {
+    const by = user?.name || 'admin';
+    setRecords((prev) => prev.map((r) => (r.id === recordId ? { ...r, pending: false, approvedBy: by, approvedAt: new Date().toISOString() } : r)));
+    if (supabase) await api.adminApproveRecord(recordId, by).catch((e) => console.warn('approve rec', e));
+  };
+  const adminRejectAttendance = async (recordId: string) => {
+    setRecords((prev) => prev.filter((r) => r.id !== recordId));
+    if (supabase) await api.adminDeleteRecord(recordId).catch((e) => console.warn('reject rec', e));
+  };
+
   // ---- leave ----
   const requestLeave: StoreValue['requestLeave'] = async (req) => {
     if (!user) return;
@@ -336,6 +385,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       date: req.date,
       hours: req.hours,
       segment: req.segment,
+      category: req.category ?? 'ANNUAL',
       startTime: req.startTime,
       endTime: req.endTime,
       reason: req.reason,
@@ -396,6 +446,97 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setSettings((prev) => ({ ...prev, workplaces: prev.workplaces.filter((w) => w.id !== id) }));
     if (supabase) await api.deleteWorkplace(id).catch((e) => console.warn('wp del', e));
   };
+  const adminAddHoliday = async (day: string, name: string) => {
+    setHolidays((prev) => {
+      const next = [...prev.filter((h) => h.day !== day), { day, name }].sort((a, b) => (a.day < b.day ? -1 : 1));
+      setItem(STORAGE_KEYS.HOLIDAYS, next);
+      return next;
+    });
+    if (supabase) await api.insertHoliday({ day, name }).catch((e) => console.warn('holiday add', e));
+  };
+  const adminRemoveHoliday = async (day: string) => {
+    setHolidays((prev) => {
+      const next = prev.filter((h) => h.day !== day);
+      setItem(STORAGE_KEYS.HOLIDAYS, next);
+      return next;
+    });
+    if (supabase) await api.deleteHoliday(day).catch((e) => console.warn('holiday del', e));
+  };
+  // 관리자: 공공데이터포털 특일정보 API에서 공휴일을 가져와 DB에 반영(Edge Function).
+  const adminSyncHolidays = async (fromYear: number, toYear: number) => {
+    if (!supabase) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
+    const { data, error } = await supabase.functions.invoke('sync-holidays', { body: { fromYear, toYear } });
+    if (error) return { ok: false, error: '공휴일 동기화 함수를 호출하지 못했습니다. (Edge Function 배포 확인)' };
+    if (data && (data as any).ok === false) return { ok: false, error: (data as any).error || '동기화 실패' };
+    // 서버 반영분을 다시 로드
+    const hols = await api.fetchHolidays().catch(() => holidays);
+    setHolidays(hols);
+    await setItem(STORAGE_KEYS.HOLIDAYS, hols);
+    return { ok: true, count: (data as any)?.count };
+  };
+
+  // 저녁식대 기록(하루 1건, 한도 적용). 같은 날짜면 갱신.
+  const setMeal = async (date: string, amount: number, note?: string) => {
+    if (!user) return;
+    const amt = Math.max(0, Math.min(Math.round(amount) || 0, MEAL_DAILY_LIMIT));
+    const existing = meals.find((m) => m.userId === user.id && m.date === date);
+    const m: MealAllowance = {
+      id: existing?.id || uid('meal'),
+      userId: user.id,
+      userName: user.name,
+      date,
+      amount: amt,
+      note: note?.trim() || undefined,
+      createdAt: existing?.createdAt,
+    };
+    setMeals((prev) => {
+      const next = [...prev.filter((x) => x.id !== m.id), m];
+      setItem(STORAGE_KEYS.MEALS, next);
+      return next;
+    });
+    if (supabase) await api.upsertMeal(m, user.id).catch((e) => console.warn('meal sync', e));
+  };
+  const removeMeal = async (id: string) => {
+    setMeals((prev) => {
+      const next = prev.filter((m) => m.id !== id);
+      setItem(STORAGE_KEYS.MEALS, next);
+      return next;
+    });
+    if (supabase) await api.deleteMeal(id).catch((e) => console.warn('meal del', e));
+  };
+
+  // 위치정보 수집·이용 동의 기록 (IP는 Edge Function이 서버에서 캡처)
+  const recordConsent = async () => {
+    if (!supabase || !user) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
+    const { data, error } = await supabase.functions.invoke('record-consent', { body: { version: CONSENT_VERSION } });
+    if (error) return { ok: false, error: '동의 기록 함수를 호출하지 못했습니다. (Edge Function 배포 확인)' };
+    if (data && (data as any).ok === false) return { ok: false, error: (data as any).error || '동의 기록 실패' };
+    const list = await api.fetchConsents().catch(() => consents);
+    setConsents(list);
+    await setItem(STORAGE_KEYS.CONSENTS, list);
+    return { ok: true };
+  };
+
+  // 관리자가 앱을 열면 공휴일을 자동 동기화(하루 1회, 백그라운드). 버튼 없이 최신 유지.
+  const autoSyncRef = useRef(false);
+  useEffect(() => {
+    if (!ready || !authed || !user?.isAdmin || autoSyncRef.current) return;
+    autoSyncRef.current = true;
+    (async () => {
+      try {
+        const last = (await getItem<number>(STORAGE_KEYS.HOLIDAYS_SYNCED)) || 0;
+        const now = new Date().getTime();
+        if (now - last < 24 * 60 * 60 * 1000) return; // 24시간 내 이미 동기화됨
+        const year = new Date().getFullYear();
+        const r = await adminSyncHolidays(year, year + 1);
+        if (r.ok) await setItem(STORAGE_KEYS.HOLIDAYS_SYNCED, now);
+      } catch {
+        // 네트워크/미배포 등은 조용히 무시(수동 버튼으로 재시도 가능)
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, authed, user?.isAdmin]);
+
   const updateWorkPolicy = async (patch: Partial<WorkPolicy>) => {
     const wpNext = { ...settings.workPolicy, ...patch };
     setSettings((prev) => ({ ...prev, workPolicy: wpNext }));
@@ -420,6 +561,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       adjustments,
       confirmations,
       profilesById,
+      holidays,
+      holidaySet: new Set(holidays.map((h) => h.day)),
+      meals,
+      consents,
       adminUnlocked: !!user?.isAdmin,
       login,
       adminCreateEmployee,
@@ -431,6 +576,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       checkIn,
       checkOut,
       clearAllRecords,
+      adminApproveAttendance,
+      adminRejectAttendance,
       requestLeave,
       cancelLeave,
       decideLeave,
@@ -438,11 +585,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addConfirmation,
       addWorkplace,
       removeWorkplace,
+      adminAddHoliday,
+      adminRemoveHoliday,
+      adminSyncHolidays,
+      setMeal,
+      removeMeal,
+      recordConsent,
       updateWorkPolicy,
       updateLeavePolicy,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById]
+    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, consents]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

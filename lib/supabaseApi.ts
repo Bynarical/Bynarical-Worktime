@@ -11,6 +11,9 @@ import {
   User,
   WorkPolicy,
   Workplace,
+  Holiday,
+  MealAllowance,
+  LocationConsent,
 } from './types';
 
 function sb() {
@@ -36,6 +39,9 @@ function recToRow(r: AttendanceRecord, userId: string) {
     out_lat: r.outLocation?.lat ?? null,
     out_lng: r.outLocation?.lng ?? null,
     out_verified: r.outVerified ?? null,
+    pending: r.pending ?? false,
+    approved_by: r.approvedBy ?? null,
+    approved_at: r.approvedAt ?? null,
     note: r.note ?? null,
     hash: r.hash ?? null,
     prev_hash: r.prevHash ?? null,
@@ -57,6 +63,9 @@ function recFromRow(row: any): AttendanceRecord {
     outLocation: row.out_lat != null ? { lat: row.out_lat, lng: row.out_lng } : undefined,
     inVerified: row.in_verified ?? undefined,
     outVerified: row.out_verified ?? undefined,
+    pending: row.pending ?? undefined,
+    approvedBy: row.approved_by || undefined,
+    approvedAt: row.approved_at || undefined,
     note: row.note || undefined,
     updatedAt: row.updated_at || new Date().toISOString(),
     hash: row.hash || undefined,
@@ -70,6 +79,7 @@ function leaveToRow(l: LeaveRequest, userId: string) {
     date: l.date,
     hours: l.hours,
     segment: l.segment,
+    category: l.category ?? 'ANNUAL',
     start_time: l.startTime ?? null,
     end_time: l.endTime ?? null,
     reason: l.reason ?? null,
@@ -89,6 +99,7 @@ function leaveFromRow(row: any): LeaveRequest {
     date: row.date,
     hours: row.hours,
     segment: row.segment,
+    category: row.category === 'PAID' ? 'PAID' : 'ANNUAL',
     startTime: row.start_time || undefined,
     endTime: row.end_time || undefined,
     reason: row.reason || undefined,
@@ -214,6 +225,55 @@ export async function insertWorkplace(w: Workplace) {
 }
 export async function deleteWorkplace(id: string) {
   const { error } = await sb().from('workplaces').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ---------- 공휴일 ----------
+export async function fetchHolidays(): Promise<Holiday[]> {
+  const { data } = await sb().from('company_holidays').select('*').order('day');
+  return (data || []).map((h: any) => ({ day: h.day, name: h.name }));
+}
+export async function insertHoliday(h: Holiday) {
+  const { error } = await sb().from('company_holidays').upsert({ day: h.day, name: h.name }, { onConflict: 'day' });
+  if (error) throw error;
+}
+export async function deleteHoliday(day: string) {
+  const { error } = await sb().from('company_holidays').delete().eq('day', day);
+  if (error) throw error;
+}
+
+// ---------- 위치정보 동의 ----------
+export async function fetchConsents(): Promise<LocationConsent[]> {
+  const { data } = await sb().from('location_consents').select('*');
+  return (data || []).map((c: any) => ({ userId: c.user_id, agreedAt: c.agreed_at, ip: c.ip || undefined, userAgent: c.user_agent || undefined, version: c.version || undefined }));
+}
+
+// ---------- 근태 승인(관리자) ----------
+export async function adminApproveRecord(id: string, approvedBy: string) {
+  const { error } = await sb()
+    .from('records')
+    .update({ pending: false, approved_by: approvedBy, approved_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+export async function adminDeleteRecord(id: string) {
+  const { error } = await sb().from('records').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ---------- 저녁식대 ----------
+export async function fetchMeals(): Promise<MealAllowance[]> {
+  const { data } = await sb().from('meal_allowances').select('*').order('date', { ascending: false });
+  return (data || []).map((m: any) => ({ id: m.id, userId: m.user_id, date: m.date, amount: Number(m.amount) || 0, note: m.note || undefined, createdAt: m.created_at }));
+}
+export async function upsertMeal(m: MealAllowance, userId: string) {
+  const { error } = await sb()
+    .from('meal_allowances')
+    .upsert({ id: m.id, user_id: userId, date: m.date, amount: m.amount, note: m.note ?? null }, { onConflict: 'user_id,date' });
+  if (error) throw error;
+}
+export async function deleteMeal(id: string) {
+  const { error } = await sb().from('meal_allowances').delete().eq('id', id);
   if (error) throw error;
 }
 

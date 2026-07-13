@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text } from 'react-native';
-import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen, Card, Field, Button, Muted, Row, useTheme } from '@/components/ui';
 import { useStore } from '@/lib/store';
 
 export default function Login() {
   const s = useStore();
-  const router = useRouter();
   const t = useTheme();
 
   const [name, setName] = useState('');
@@ -23,7 +21,7 @@ export default function Login() {
     const r = await s.login(name, password);
     setBusy(false);
     if (!r.ok) return setErr(r.error || '로그인에 실패했습니다.');
-    router.replace('/(tabs)');
+    // 이동은 루트 Gate가 역할(관리자/직원)에 따라 처리합니다.
   }
 
   return (

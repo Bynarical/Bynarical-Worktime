@@ -28,6 +28,7 @@ import {
 import { shortHash } from '@/lib/hash';
 import { toCsv, exportCsv } from '@/lib/csv';
 import { AttendanceRecord } from '@/lib/types';
+import { AttendanceCalendar } from '@/components/AttendanceCalendar';
 
 export default function History() {
   const s = useStore();
@@ -36,6 +37,7 @@ export default function History() {
   const [signWeek, setSignWeek] = useState<string | null>(null);
   const [sigText, setSigText] = useState('');
   const [viewUserId, setViewUserId] = useState<string | null>(null);
+  const [dayView, setDayView] = useState<'calendar' | 'list'>('calendar');
 
   const meId = s.user?.id;
   const viewId = viewUserId ?? meId; // 관리자가 다른 직원을 볼 수 있음
@@ -152,7 +154,12 @@ export default function History() {
         <Row style={{ gap: 8 }}>
           <StatTile onHero label="근무일" value={`${summary.days}일`} />
           <StatTile onHero label="총 실근로" value={minutesToKor(summary.totalWorked)} />
-          <StatTile onHero label="초과/부족" value={minutesToKor(summary.totalDiff)} sub={summary.totalDiff >= 0 ? '초과' : '부족'} />
+          <StatTile
+            onHero
+            label="근로부족"
+            value={summary.shortfallDays > 0 ? `${summary.shortfallDays}일` : '없음'}
+            sub={summary.shortfallDays > 0 ? `-${minutesToKor(summary.shortfallMinutes)}` : '정상'}
+          />
         </Row>
         <Row style={{ gap: 8 }}>
           <StatTile onHero label="연차" value={`${summary.leaveMinutes / 60}h`} />
@@ -188,7 +195,7 @@ export default function History() {
       {/* 주간 확인(전자서명) */}
       <Card>
         <Text style={{ fontWeight: '700', color: t.text }}>주간 확인 (전자서명)</Text>
-        <Muted size={12}>근로계약서 제4조 7항: 시스템 기록을 기준으로 근로시간을 산정합니다. 주 단위로 확인·서명하세요.</Muted>
+        <Muted size={12}>시스템 기록을 기준으로 근로시간을 산정합니다. 주 단위로 확인·서명하세요.</Muted>
         {weeks.length === 0 && <Muted>기록이 없습니다</Muted>}
         {weeks.map(([ws, group]) => {
           const weekEnd = addDaysKey(ws, 6);
@@ -224,14 +231,25 @@ export default function History() {
         })}
       </Card>
 
-      {/* 일별 기록 */}
-      <Text style={{ fontWeight: '700', color: t.text, marginTop: 4 }}>일별 기록</Text>
-      {dayRows.length === 0 && (
-        <Card><Muted>기록이 없습니다</Muted></Card>
+      {/* 일별 기록: 달력 / 목록 */}
+      <Row style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+        <Text style={{ fontWeight: '700', color: t.text }}>일별 기록</Text>
+        <Row style={{ gap: 6 }}>
+          <Chip label="달력" active={dayView === 'calendar'} onPress={() => setDayView('calendar')} small />
+          <Chip label="목록" active={dayView === 'list'} onPress={() => setDayView('list')} small />
+        </Row>
+      </Row>
+
+      {dayView === 'calendar' ? (
+        viewId ? <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} /> : null
+      ) : (
+        <>
+          {dayRows.length === 0 && <Card><Muted>기록이 없습니다</Muted></Card>}
+          {dayRows.map((r) => (
+            <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} />
+          ))}
+        </>
       )}
-      {dayRows.map((r) => (
-        <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} />
-      ))}
     </Screen>
   );
 }
@@ -245,7 +263,7 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
       <Row style={{ justifyContent: 'space-between' }}>
         <Body style={{ fontWeight: '700' }}>{date} ({wd})</Body>
         {comp.isFullLeave ? (
-          <Badge text="종일 연차" color={t.trip} />
+          <Badge text={comp.isPaidLeave ? '종일 유급휴가' : '종일 연차'} color={comp.isPaidLeave ? t.success : t.trip} />
         ) : (
           <Muted>{rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '--:--'} → {rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '--:--'}</Muted>
         )}
@@ -255,13 +273,13 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
           <KVInline k="실근로" v={minutesToKor(comp.workedMinutes)} />
           <KVInline k="소정" v={minutesToKor(comp.requiredMinutes)} />
           <KVInline k="차이" v={`${comp.diffMinutes >= 0 ? '+' : ''}${minutesToKor(comp.diffMinutes)}`} color={comp.diffMinutes >= 0 ? t.success : t.danger} />
-          {comp.expectedOutMin ? <KVInline k="예상퇴근" v={minutesToHM(comp.expectedOutMin)} /> : null}
+          {comp.expectedOutMin ? <KVInline k="퇴근가능" v={minutesToHM(comp.expectedOutMin)} /> : null}
         </Row>
       )}
       {comp.labels.length > 0 && (
         <Row style={{ flexWrap: 'wrap' }}>
           {comp.labels.map((l) => (
-            <Badge key={l} text={l} color={/부족|미충족|지각|미기록|오류/.test(l) ? t.danger : /연차|출장/.test(l) ? t.trip : t.textDim} />
+            <Badge key={l} text={l} color={/부족|미충족|지각|미기록|오류/.test(l) ? t.danger : /유급/.test(l) ? t.success : /연차|출장/.test(l) ? t.trip : t.textDim} />
           ))}
         </Row>
       )}

@@ -45,6 +45,9 @@ export interface AttendanceRecord {
   outLocation?: GeoPoint;
   inVerified?: boolean; // 출근 시 반경 내 여부
   outVerified?: boolean; // 퇴근 시 반경 내 여부
+  pending?: boolean; // 근무지 밖 출근 → 관리자 승인 대기
+  approvedBy?: string; // 승인한 관리자
+  approvedAt?: string; // 승인 시각 ISO
   note?: string;
   updatedAt: string; // ISO
   prevHash?: string;
@@ -54,6 +57,8 @@ export interface AttendanceRecord {
 // ---- 연차/휴가 ----
 export type LeaveUnit = 2 | 4 | 6 | 8; // 사용 단위(시간): 반반차 2h ~ 종일 8h
 export type LeaveSegment = 'FULL' | 'AM' | 'PM' | 'CUSTOM';
+// 연차 카테고리: ANNUAL=연차(잔여 차감) / PAID=유급휴가(예비군·공가·경조사 등, 연차 미차감)
+export type LeaveCategory = 'ANNUAL' | 'PAID';
 export type LeaveStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
 
 export interface LeaveRequest {
@@ -64,6 +69,7 @@ export interface LeaveRequest {
   date: string; // YYYY-MM-DD
   hours: LeaveUnit; // 차감 시간(2/4/6/8)
   segment: LeaveSegment; // FULL=종일, AM=오전(늦게출근), PM=오후(일찍퇴근), CUSTOM=직접지정
+  category?: LeaveCategory; // 미지정=ANNUAL(연차). PAID=유급휴가(연차 미차감)
   startTime?: string; // 휴가 구간 시작 "HH:MM"
   endTime?: string; // 휴가 구간 종료 "HH:MM"
   reason?: string;
@@ -132,4 +138,30 @@ export interface LeaveAdjustment {
   hours: number; // 양수=추가부여, 음수=차감
   note?: string;
   at: string;
+}
+
+// 공휴일/회사 휴무일 — 연차 80% 출근율 판정 시 소정근로일에서 제외
+export interface Holiday {
+  day: string; // YYYY-MM-DD
+  name: string;
+}
+
+// 위치정보 수집·이용 동의 기록 (최초 출퇴근 전 필수)
+export interface LocationConsent {
+  userId: string;
+  agreedAt: string;
+  ip?: string;
+  userAgent?: string;
+  version?: string;
+}
+
+// 저녁식대(야근 대체 · 법인카드) 기록 — 하루 1건, 한도 MEAL_DAILY_LIMIT
+export interface MealAllowance {
+  id: string;
+  userId: string;
+  userName?: string;
+  date: string; // YYYY-MM-DD
+  amount: number; // 원(KRW)
+  note?: string; // 가맹점/메뉴 등
+  createdAt?: string;
 }

@@ -20,7 +20,21 @@ export const STORAGE_KEYS = {
   SYNC_QUEUE: 'att_sync_queue',
   PLANNED_START: 'att_planned_start',
   SESSION: 'att_session',
+  HOLIDAYS: 'att_holidays',
+  HOLIDAYS_SYNCED: 'att_holidays_synced_at',
+  MEALS: 'att_meals',
+  CONSENTS: 'att_consents',
 } as const;
+
+// 저녁식대 1일 한도(원)
+export const MEAL_DAILY_LIMIT = 20000;
+
+// 위치정보 수집·이용 동의
+export const CONSENT_VERSION = 'v1';
+export const CONSENT_TEXT =
+  '본 앱은 출퇴근 확인을 위해 출근·퇴근 시점의 위치(좌표)를 수집·기록합니다. ' +
+  '수집한 위치정보는 근태 관리 목적으로만 이용되며, 회사(관리자)에게 제공·보관됩니다. ' +
+  '동의 시각·IP·기기 정보가 함께 기록됩니다. 위 내용에 동의합니다.';
 
 // 색상 팔레트 (기존 앱과 동일 + 다크 대응 확장)
 export const COLORS = {

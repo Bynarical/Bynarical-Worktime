@@ -101,6 +101,26 @@ export function yearsSince(hireDate: string, asOf: string): number {
   return Math.floor(monthsSince(hireDate, asOf) / 12);
 }
 
+// dateStr(YYYY-MM-DD)에 n년 더한 날짜키. 2/29 → 해당 연도에 없으면 2/28로 보정.
+export function addYearsKey(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const ny = y + n;
+  const lastDay = new Date(Date.UTC(ny, m, 0)).getUTCDate(); // m월의 마지막 일
+  const nd = Math.min(d, lastDay);
+  return `${ny}-${String(m).padStart(2, '0')}-${String(nd).padStart(2, '0')}`;
+}
+
+// dateStr(YYYY-MM-DD)에 n개월 더한 날짜키. 말일 초과 시 해당 월 말일로 보정.
+export function addMonthsKey(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const total = (y * 12 + (m - 1)) + n;
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12) + 1;
+  const lastDay = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  const nd = Math.min(d, lastDay);
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(nd).padStart(2, '0')}`;
+}
+
 // 30분 등 단위로 반올림/내림된 시각 후보 목록 생성 ("HH:MM")
 export function timeSlots(startHM: string, endHM: string, stepMin: number): string[] {
   const out: string[] = [];

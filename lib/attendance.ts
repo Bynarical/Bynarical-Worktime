@@ -88,6 +88,7 @@ export interface DayComputation {
   diffMinutes: number; // worked - required (음수=부족, 양수=초과)
   isWorkday: boolean;
   isFullLeave: boolean;
+  isPaidLeave: boolean; // 그날 휴가가 유급휴가(연차 미차감)인지
   effectiveStartMin: number; // 적용 출근시각(반올림)
   flags: {
     late: boolean; // 지각(적용 출근이 최대 출근시각 초과)
@@ -140,6 +141,7 @@ export function computeDay(
   const isFullLeave =
     leaves.some((l) => l.status === 'APPROVED' && l.segment === 'FULL') ||
     leaveMinutes >= policy.dailyWorkMinutes;
+  const isPaidLeave = leaves.some((l) => l.status === 'APPROVED' && l.category === 'PAID');
   const requiredMinutes = Math.max(0, policy.dailyWorkMinutes - leaveMinutes);
 
   const plannedEndMin = plannedEndMinutes(plannedStartMin, policy);
@@ -157,7 +159,11 @@ export function computeDay(
   if (effOutMin != null && effOutMin > effectiveStartMin) {
     const span = { s: effectiveStartMin, e: effOutMin };
     breakDeducted = overlap(span, { s: bS, e: bE });
-    workedMinutes = Math.max(0, effOutMin - effectiveStartMin - breakDeducted);
+    // 중간 외출(직접 지정 시간연차) 구간은 실근로에서 제외한다.
+    const customLeaveIv = leaves
+      .filter((l) => l.status === 'APPROVED' && l.segment === 'CUSTOM' && l.startTime && l.endTime)
+      .map((l) => ({ s: hmToMinutes(l.startTime as string), e: hmToMinutes(l.endTime as string) }));
+    workedMinutes = intervalsLength(subtract(span, [{ s: bS, e: bE }, ...customLeaveIv]));
   }
 
   // 코어타임 유효 구간 = 코어창 - 연차 off
@@ -196,14 +202,15 @@ export function computeDay(
   const diffMinutes = hasCheckOut ? workedMinutes - requiredMinutes : 0;
 
   const labels: string[] = [];
-  if (isFullLeave) labels.push('연차(종일)');
-  else if (leaveMinutes > 0) labels.push(`연차 ${leaveMinutes / 60}h`);
+  const leaveWord = isPaidLeave ? '유급휴가' : '연차';
+  if (isFullLeave) labels.push(`${leaveWord}(종일)`);
+  else if (leaveMinutes > 0) labels.push(`${leaveWord} ${leaveMinutes / 60}h`);
   if (flags.late) labels.push('지각');
   if (flags.coreViolation) labels.push('코어타임 미충족');
   if (flags.earlyLeave) labels.push('조기퇴근');
   if (flags.missingClockOut) labels.push('퇴근 미기록');
   if (flags.insufficient) labels.push('근로부족');
-  if (flags.overtime) labels.push('초과근무');
+  // 소정근로 이상은 정상으로 간주 — '초과근무' 라벨은 표시하지 않음
   if (record?.type === 'TRIP') labels.push('출장');
 
   return {
@@ -224,6 +231,7 @@ export function computeDay(
     diffMinutes,
     isWorkday,
     isFullLeave,
+    isPaidLeave,
     flags,
     labels,
   };
@@ -233,7 +241,13 @@ export interface PeriodSummary {
   days: number; // 근무(기록)일수
   totalWorked: number; // 총 실근로(분)
   totalRequired: number; // 총 소정근로(분)
-  totalDiff: number; // 초과/부족(분)
+  totalDiff: number; // 순증감(분): totalWorked - totalRequired (참고용, 월 상계라 판정엔 쓰지 않음)
+  // 근로시간은 하루 단위 판정 — 초과/부족을 상계하지 않고 날짜별로 따로 합산한다.
+  // 부족/초과는 그날의 소정근로(연차 차감 후)를 기준으로 하므로, 연차 있는 날은 줄어든 소정만 채우면 정상.
+  shortfallMinutes: number; // 소정 미달분 합계(양수), 부족한 날들만
+  shortfallDays: number; // 소정 미달 일수
+  overtimeMinutes: number; // 소정 초과분 합계(양수), 초과한 날들만
+  overtimeDays: number; // 소정 초과 일수
   lateCount: number;
   coreViolationCount: number;
   earlyLeaveCount: number;
@@ -249,6 +263,10 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
     totalWorked: 0,
     totalRequired: 0,
     totalDiff: 0,
+    shortfallMinutes: 0,
+    shortfallDays: 0,
+    overtimeMinutes: 0,
+    overtimeDays: 0,
     lateCount: 0,
     coreViolationCount: 0,
     earlyLeaveCount: 0,
@@ -261,6 +279,15 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
     s.totalWorked += c.workedMinutes;
     s.totalRequired += c.requiredMinutes;
     s.leaveMinutes += c.leaveMinutes;
+    // 날짜별 초과/부족을 상계 없이 합산 (그날의 소정 = 연차 차감 후 기준)
+    if (c.flags.insufficient) {
+      s.shortfallDays += 1;
+      s.shortfallMinutes += c.requiredMinutes - c.workedMinutes;
+    }
+    if (c.flags.overtime) {
+      s.overtimeDays += 1;
+      s.overtimeMinutes += c.workedMinutes - c.requiredMinutes;
+    }
     if (c.flags.late) s.lateCount += 1;
     if (c.flags.coreViolation) s.coreViolationCount += 1;
     if (c.flags.earlyLeave) s.earlyLeaveCount += 1;

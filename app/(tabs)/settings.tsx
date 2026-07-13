@@ -45,7 +45,6 @@ export default function Settings() {
         <Text style={{ fontWeight: '700', color: t.text }}>정보</Text>
         <KV k="앱" v="Bynarical Worktime v2" />
         <KV k="근무제" v={`코어타임 ${s.settings.workPolicy.coreStart}–${s.settings.workPolicy.coreEnd}`} />
-        <Muted size={11}>근로계약서 제4조(코어타임)·제6조(연차/반반차) 반영</Muted>
       </Card>
       <Button label="로그아웃" variant="neutral" onPress={async () => { await s.logout(); router.replace('/(auth)/login'); }} />
     </Screen>
@@ -204,7 +203,7 @@ function AdminUnlocked() {
   return (
     <Card>
       <Row><Badge text="관리자" color={t.trip} /><Text style={{ fontWeight: '800', color: t.text }}>근무·연차 정책</Text></Row>
-      <Muted size={12}>근로계약서 제4조 5항: 회사는 휴게시간을 조정할 수 있습니다. (전 직원 공통 적용)</Muted>
+      <Muted size={12}>전 직원에게 공통 적용됩니다.</Muted>
 
       <Row><View style={{ flex: 1 }}><Field label="코어 시작" value={f.coreStart} onChangeText={set('coreStart')} /></View><View style={{ flex: 1 }}><Field label="코어 종료" value={f.coreEnd} onChangeText={set('coreEnd')} /></View></Row>
       <Row><View style={{ flex: 1 }}><Field label="최소 출근" value={f.earliestClockIn} onChangeText={set('earliestClockIn')} /></View><View style={{ flex: 1 }}><Field label="최대 출근" value={f.latestClockIn} onChangeText={set('latestClockIn')} /></View></Row>

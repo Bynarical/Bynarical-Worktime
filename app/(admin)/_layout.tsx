@@ -21,7 +21,7 @@ function Icon({ emoji, focused }: { emoji: string; focused: boolean }) {
   );
 }
 
-export default function TabsLayout() {
+export default function AdminLayout() {
   const t = useTheme();
   return (
     <Tabs
@@ -40,9 +40,9 @@ export default function TabsLayout() {
         tabBarItemStyle: { paddingVertical: 4 },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: '출퇴근', tabBarIcon: ({ focused }) => <Icon emoji="🕒" focused={focused} /> }} />
-      <Tabs.Screen name="history" options={{ title: '이력', tabBarIcon: ({ focused }) => <Icon emoji="📊" focused={focused} /> }} />
-      <Tabs.Screen name="leave" options={{ title: '연차', tabBarIcon: ({ focused }) => <Icon emoji="🌴" focused={focused} /> }} />
+      <Tabs.Screen name="index" options={{ title: '대시보드', tabBarIcon: ({ focused }) => <Icon emoji="📋" focused={focused} /> }} />
+      <Tabs.Screen name="employees" options={{ title: '직원관리', tabBarIcon: ({ focused }) => <Icon emoji="👥" focused={focused} /> }} />
+      <Tabs.Screen name="approvals" options={{ title: '승인·근태', tabBarIcon: ({ focused }) => <Icon emoji="✅" focused={focused} /> }} />
       <Tabs.Screen name="settings" options={{ title: '설정', tabBarIcon: ({ focused }) => <Icon emoji="⚙️" focused={focused} /> }} />
     </Tabs>
   );

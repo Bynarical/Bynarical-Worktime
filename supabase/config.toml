@@ -1,0 +1,10 @@
+project_id = "dorkgmmvbmdunahewwgi"
+
+[functions.sync-holidays]
+verify_jwt = true
+
+[functions.create-employee]
+verify_jwt = true
+
+[functions.record-consent]
+verify_jwt = true
