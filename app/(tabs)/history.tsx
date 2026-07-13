@@ -72,7 +72,7 @@ export default function History() {
     return sorted.map((d) => {
       const rec = myRecords.find((r) => r.date === d);
       const leaves = myLeaves.filter((l) => l.date === d);
-      const comp = computeDay(rec, leaves, policy, { dateStr: d });
+      const comp = computeDay(rec, leaves, policy, { dateStr: d, todayStr: dateKey() });
       return { date: d, rec, comp };
     });
   }, [myRecords, myLeaves, policy, monthPrefix]);

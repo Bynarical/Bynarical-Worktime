@@ -56,7 +56,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
   const comps = [...dates].map((d) => {
     const rec = recs.find((r) => r.date === d);
     const dayLeaves = approved.filter((l) => l.date === d);
-    const opts = d === inp.today ? { dateStr: d, nowMin: inp.nowMin } : { dateStr: d };
+    const opts = d === inp.today ? { dateStr: d, nowMin: inp.nowMin, todayStr: inp.today } : { dateStr: d, todayStr: inp.today };
     return computeDay(rec, dayLeaves, inp.workPolicy, opts);
   });
   const month = summarize(comps, recs);
@@ -99,7 +99,12 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     .filter((m) => m.userId === id && m.date.startsWith(inp.monthPrefix))
     .reduce((sum, m) => sum + m.amount, 0);
 
-  const hasWarning = anomalyDays > 0 || unsignedWeeks > 0 || !p?.hireDate || (balance != null && balance.remainingHours < 0);
+  // 관리자 계정은 입사일·연차 개념이 없으므로 그와 관련한 경고는 제외한다.
+  const isAdmin = !!p?.isAdmin;
+  const hasWarning =
+    anomalyDays > 0 ||
+    unsignedWeeks > 0 ||
+    (!isAdmin && (!p?.hireDate || (balance != null && balance.remainingHours < 0)));
 
   return {
     id,

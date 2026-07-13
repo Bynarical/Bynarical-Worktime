@@ -61,7 +61,7 @@ export default function Approvals() {
     return [...dates].sort().reverse().map((d) => {
       const rec = recs.find((r) => r.date === d);
       const leaves = lvs.filter((l) => l.date === d);
-      return { date: d, rec, comp: computeDay(rec, leaves, policy, { dateStr: d }) };
+      return { date: d, rec, comp: computeDay(rec, leaves, policy, { dateStr: d, todayStr: dateKey() }) };
     });
   }, [s.records, s.leaves, viewId, monthPrefix, policy]);
 

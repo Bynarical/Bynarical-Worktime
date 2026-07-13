@@ -106,7 +106,7 @@ export function computeDay(
   record: AttendanceRecord | undefined,
   leaves: LeaveRequest[],
   policy: WorkPolicy,
-  opts: { nowMin?: number; dateStr: string } = { dateStr: '' }
+  opts: { nowMin?: number; dateStr: string; todayStr?: string } = { dateStr: '' }
 ): DayComputation {
   const dateStr = opts.dateStr || record?.date || '';
   const dayMs = dateStr ? Date.parse(dateStr + 'T00:00:00Z') : 0;
@@ -184,7 +184,11 @@ export function computeDay(
     missingClockOut: false,
   };
 
-  if (!isFullLeave && isWorkday) {
+  // 이상징후는 "종료된 날(과거일)"에만 판정한다. 진행 중인 당일은 아직 퇴근 전이라
+  // 미퇴근/부족 등이 정상 상황이므로 플래그를 매기지 않는다(하루가 지난 뒤 표시).
+  const isClosedDay = opts.todayStr ? dateStr < opts.todayStr : true;
+
+  if (!isFullLeave && isWorkday && isClosedDay) {
     if (hasCheckIn && plannedStartMin > allowedClockIn + 0.01) flags.late = true;
     if (hasCheckIn && !hasCheckOut) flags.missingClockOut = true;
 
@@ -239,6 +243,7 @@ export function computeDay(
 
 export interface PeriodSummary {
   days: number; // 근무(기록)일수
+  normalDays: number; // 정상근무일 — 소정근무일에 정상 출퇴근하고 이상징후 없는 날
   totalWorked: number; // 총 실근로(분)
   totalRequired: number; // 총 소정근로(분)
   totalDiff: number; // 순증감(분): totalWorked - totalRequired (참고용, 월 상계라 판정엔 쓰지 않음)
@@ -260,6 +265,7 @@ export interface PeriodSummary {
 export function summarize(computations: DayComputation[], records: AttendanceRecord[]): PeriodSummary {
   const s: PeriodSummary = {
     days: 0,
+    normalDays: 0,
     totalWorked: 0,
     totalRequired: 0,
     totalDiff: 0,
@@ -276,6 +282,18 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
   };
   for (const c of computations) {
     if (c.hasCheckIn) s.days += 1;
+    if (
+      c.isWorkday &&
+      !c.isFullLeave &&
+      c.hasCheckIn &&
+      c.hasCheckOut &&
+      !c.flags.late &&
+      !c.flags.coreViolation &&
+      !c.flags.earlyLeave &&
+      !c.flags.insufficient &&
+      !c.flags.missingClockOut
+    )
+      s.normalDays += 1;
     s.totalWorked += c.workedMinutes;
     s.totalRequired += c.requiredMinutes;
     s.leaveMinutes += c.leaveMinutes;

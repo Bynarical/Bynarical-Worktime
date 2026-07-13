@@ -74,7 +74,7 @@ export default function Today() {
     (l) => l.userId === s.user?.id && l.date === today && (l.status === 'APPROVED' || l.status === 'REQUESTED')
   );
   const comp = useMemo(
-    () => computeDay(rec, todaysLeaves.filter((l) => l.status === 'APPROVED'), policy, { nowMin: minutesOfDay(now), dateStr: today }),
+    () => computeDay(rec, todaysLeaves.filter((l) => l.status === 'APPROVED'), policy, { nowMin: minutesOfDay(now), dateStr: today, todayStr: today }),
     [rec, todaysLeaves, policy, now, today]
   );
 

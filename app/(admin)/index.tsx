@@ -182,26 +182,28 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
       {/* 핵심 지표 */}
       <Row style={{ gap: 8, flexWrap: 'wrap' }}>
         <Metric label="이번달 근무" value={`${o.month.days}일`} />
-        <Metric label="실근로" value={minutesToKor(o.month.totalWorked)} />
+        <Metric label="정상근무" value={`${o.month.normalDays}일`} color={t.success} />
         <Metric
           label="근로부족"
           value={shortfallDays > 0 ? `${shortfallDays}일 -${minutesToKor(o.month.shortfallMinutes)}` : '없음'}
           color={shortfallDays > 0 ? t.danger : t.success}
         />
-        <Metric
-          label="연차 잔여"
-          value={o.balance ? hoursToDayLabel(o.balance.remainingHours) : '미산정'}
-          color={o.balance ? (o.balance.remainingHours < 0 ? t.danger : t.trip) : t.textFaint}
-        />
+        {!o.isAdmin && (
+          <Metric
+            label="연차 잔여"
+            value={o.balance ? hoursToDayLabel(o.balance.remainingHours) : '미산정'}
+            color={o.balance ? (o.balance.remainingHours < 0 ? t.danger : t.trip) : t.textFaint}
+          />
+        )}
       </Row>
 
       {/* 경고 뱃지 */}
-      {(o.anomalyDays > 0 || o.unsignedWeeks > 0 || o.pendingLeaveCount > 0 || !o.hireDate) && (
+      {(o.anomalyDays > 0 || o.unsignedWeeks > 0 || o.pendingLeaveCount > 0 || (!o.isAdmin && !o.hireDate)) && (
         <Row style={{ flexWrap: 'wrap', gap: 6 }}>
           {o.anomalyDays > 0 && <Badge text={`이상 ${o.anomalyDays}일`} color={t.danger} />}
           {o.unsignedWeeks > 0 && <Badge text={`미서명 ${o.unsignedWeeks}주`} color={t.textDim} />}
           {o.pendingLeaveCount > 0 && <Badge text={`연차대기 ${o.pendingLeaveCount}건`} color={t.warning} />}
-          {!o.hireDate && <Badge text="입사일 미등록" color={t.warning} />}
+          {!o.isAdmin && !o.hireDate && <Badge text="입사일 미등록" color={t.warning} />}
         </Row>
       )}
 
@@ -209,8 +211,12 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
       {expanded && (
         <>
           <Divider />
-          <KV k="입사일" v={o.hireDate || '미등록'} />
-          <Divider />
+          {!o.isAdmin && (
+            <>
+              <KV k="입사일" v={o.hireDate || '미등록'} />
+              <Divider />
+            </>
+          )}
           <Text style={{ fontWeight: '700', color: t.textDim, fontSize: 13 }}>이번달 근태</Text>
           <KV k="총 실근로 / 소정" v={`${minutesToKor(o.month.totalWorked)} / ${minutesToKor(o.month.totalRequired)}`} />
           <KV k="지각" v={`${o.month.lateCount}회`} />
@@ -218,7 +224,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           <KV k="조기퇴근" v={`${o.month.earlyLeaveCount}회`} />
           <KV k="퇴근 미기록" v={`${o.month.missingCount}회`} />
           <KV k="출장" v={`${o.month.tripCount}회`} />
-          <KV k="사용 연차(이번달)" v={`${o.month.leaveMinutes / 60}h`} />
+          {!o.isAdmin && <KV k="사용 연차(이번달)" v={`${o.month.leaveMinutes / 60}h`} />}
           <KV k="미서명 주" v={o.unsignedWeeks > 0 ? `${o.unsignedWeeks}주` : '없음'} />
           <KV k="이번달 식대" v={won(o.mealTotal)} />
           {o.balance && (

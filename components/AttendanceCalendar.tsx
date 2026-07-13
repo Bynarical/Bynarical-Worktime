@@ -74,7 +74,7 @@ export function AttendanceCalendar({
       const date = `${monthPrefix}-${String(d).padStart(2, '0')}`;
       const rec = myRecords.find((r) => r.date === date);
       const dayLeaves = myLeaves.filter((l) => l.date === date);
-      const opts = date === today ? { dateStr: date, nowMin } : { dateStr: date };
+      const opts = date === today ? { dateStr: date, nowMin, todayStr: today } : { dateStr: date, todayStr: today };
       const comp = computeDay(rec, dayLeaves, policy, opts);
       out.push({
         date,
