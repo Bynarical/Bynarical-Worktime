@@ -244,6 +244,7 @@ export function computeDay(
 export interface PeriodSummary {
   days: number; // 근무(기록)일수
   normalDays: number; // 정상근무일 — 소정근무일에 정상 출퇴근하고 이상징후 없는 날
+  scheduledDays: number; // 소정근무일 — 근무요일이면서 종일연차가 아닌 날(기록/연차 있는 날 기준)
   totalWorked: number; // 총 실근로(분)
   totalRequired: number; // 총 소정근로(분)
   totalDiff: number; // 순증감(분): totalWorked - totalRequired (참고용, 월 상계라 판정엔 쓰지 않음)
@@ -281,6 +282,7 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
   const s: PeriodSummary = {
     days: 0,
     normalDays: 0,
+    scheduledDays: 0,
     totalWorked: 0,
     totalRequired: 0,
     totalDiff: 0,
@@ -298,6 +300,7 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
   for (const c of computations) {
     if (c.hasCheckIn) s.days += 1;
     if (isNormalWorkday(c)) s.normalDays += 1;
+    if (c.isWorkday && !c.isFullLeave) s.scheduledDays += 1;
     s.totalWorked += c.workedMinutes;
     s.totalRequired += c.requiredMinutes;
     s.leaveMinutes += c.leaveMinutes;

@@ -218,7 +218,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
             </>
           )}
           <Text style={{ fontWeight: '700', color: t.textDim, fontSize: 13 }}>이번달 근태</Text>
-          <KV k="총 실근로 / 소정" v={`${minutesToKor(o.month.totalWorked)} / ${minutesToKor(o.month.totalRequired)}`} />
+          <KV k="정상근무 / 소정근무" v={`${o.month.normalDays}일 / ${o.month.scheduledDays}일`} />
           <KV k="지각" v={`${o.month.lateCount}회`} />
           <KV k="코어타임 위반" v={`${o.month.coreViolationCount}회`} />
           <KV k="조기퇴근" v={`${o.month.earlyLeaveCount}회`} />
