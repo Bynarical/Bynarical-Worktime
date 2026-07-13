@@ -15,7 +15,7 @@ import {
   Switch,
   StatTile,
 } from '@/components/ui';
-import { useStore } from '@/lib/store';
+import { useStore, isEmployeeAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeBalance, hoursToDayLabel } from '@/lib/leave';
 import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
@@ -27,10 +27,11 @@ export default function Employees() {
   const leavePolicy = s.settings.leavePolicy;
 
   const employees = useMemo(
-    () => Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })),
+    () => Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter(isEmployeeAccount),
     [s.profilesById]
   );
-  const adminCount = employees.filter((e) => e.isAdmin).length;
+  // 관리자 수는 전체 프로필 기준(관리자 전용 계정 포함)
+  const adminCount = useMemo(() => Object.values(s.profilesById).filter((p) => p.isAdmin).length, [s.profilesById]);
 
   const balanceFor = (id: string) => {
     const p = s.profilesById[id];

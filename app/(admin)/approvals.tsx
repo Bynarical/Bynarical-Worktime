@@ -13,7 +13,7 @@ import {
   Divider,
   StatTile,
 } from '@/components/ui';
-import { useStore } from '@/lib/store';
+import { useStore, isEmployeeAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeDay, summarize, DayComputation } from '@/lib/attendance';
 import { SEGMENT_LABELS } from '@/lib/leave';
@@ -33,7 +33,7 @@ export default function Approvals() {
     [s.records]
   );
   const employees = useMemo(
-    () => Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter((e) => e.id !== s.user?.id),
+    () => Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter((e) => e.id !== s.user?.id && isEmployeeAccount(e)),
     [s.profilesById, s.user]
   );
 
