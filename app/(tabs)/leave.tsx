@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import {
   Screen,
   Hero,
@@ -27,6 +28,11 @@ export default function Leave() {
   const s = useStore();
   const t = useTheme();
   const policy = s.settings.leavePolicy;
+
+  // 연차 탭을 열면 승인/반려 결과를 확인한 것으로 처리(배지 초기화)
+  const markRef = useRef(s.markLeavesSeen);
+  markRef.current = s.markLeavesSeen;
+  useFocusEffect(useCallback(() => { markRef.current(); }, []));
 
   const leaveCtx = useMemo(
     () => ({ records: s.records, workPolicy: s.settings.workPolicy, holidays: s.holidaySet }),

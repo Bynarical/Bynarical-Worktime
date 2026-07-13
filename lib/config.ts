@@ -24,6 +24,7 @@ export const STORAGE_KEYS = {
   HOLIDAYS_SYNCED: 'att_holidays_synced_at',
   MEALS: 'att_meals',
   CONSENTS: 'att_consents',
+  LEAVE_SEEN: 'att_leave_seen', // 직원이 연차 승인/반려 결과를 마지막으로 확인한 시각
 } as const;
 
 // 저녁식대 1일 한도(원)

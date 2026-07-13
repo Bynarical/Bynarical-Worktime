@@ -2,6 +2,7 @@ import React from 'react';
 import { Text, View, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useTheme } from '@/lib/theme';
+import { useStore } from '@/lib/store';
 
 function Icon({ emoji, focused }: { emoji: string; focused: boolean }) {
   const t = useTheme();
@@ -23,6 +24,11 @@ function Icon({ emoji, focused }: { emoji: string; focused: boolean }) {
 
 export default function AdminLayout() {
   const t = useTheme();
+  const s = useStore();
+  // 승인 대기(복귀 전 외출 제외) 건수 — 탭 배지
+  const pendingCount = s.leaves.filter(
+    (l) => l.status === 'REQUESTED' && !(l.segment === 'CUSTOM' && !l.endTime)
+  ).length;
   return (
     <Tabs
       screenOptions={{
@@ -42,7 +48,7 @@ export default function AdminLayout() {
     >
       <Tabs.Screen name="index" options={{ title: '대시보드', tabBarIcon: ({ focused }) => <Icon emoji="📋" focused={focused} /> }} />
       <Tabs.Screen name="employees" options={{ title: '직원관리', tabBarIcon: ({ focused }) => <Icon emoji="👥" focused={focused} /> }} />
-      <Tabs.Screen name="approvals" options={{ title: '승인·근태', tabBarIcon: ({ focused }) => <Icon emoji="✅" focused={focused} /> }} />
+      <Tabs.Screen name="approvals" options={{ title: '승인·근태', tabBarBadge: pendingCount > 0 ? pendingCount : undefined, tabBarIcon: ({ focused }) => <Icon emoji="✅" focused={focused} /> }} />
       <Tabs.Screen name="settings" options={{ title: '설정', tabBarIcon: ({ focused }) => <Icon emoji="⚙️" focused={focused} /> }} />
     </Tabs>
   );
