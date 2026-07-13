@@ -28,7 +28,11 @@ export default function Approvals() {
   const s = useStore();
   const t = useTheme();
 
-  const pending = useMemo(() => s.leaves.filter((l) => l.status === 'REQUESTED'), [s.leaves]);
+  // 승인 대기 — 복귀 전(종료 미정) 외출은 아직 확정 전이라 목록에서 제외
+  const pending = useMemo(
+    () => s.leaves.filter((l) => l.status === 'REQUESTED' && !(l.segment === 'CUSTOM' && !l.endTime)),
+    [s.leaves]
+  );
   const pendingRecs = useMemo(
     () => s.records.filter((r) => r.pending).sort((a, b) => (a.date < b.date ? 1 : -1)),
     [s.records]
@@ -135,7 +139,7 @@ export default function Approvals() {
             </Row>
             <Badge text={`${l.hours}h`} color={t.trip} />
           </Row>
-          <Muted size={12}>{SEGMENT_LABELS[l.segment]}{l.reason ? ` · ${l.reason}` : ''}</Muted>
+          <Muted size={12}>{SEGMENT_LABELS[l.segment]}{l.segment === 'CUSTOM' && l.startTime ? ` ${l.startTime}~${l.endTime || ''}` : ''}{l.reason ? ` · ${l.reason}` : ''}</Muted>
           <Row>
             <Button label="승인" variant="success" small style={{ flex: 1 }} onPress={() => s.decideLeave(l.id, true)} />
             <Button label="반려" variant="danger" small style={{ flex: 1 }} onPress={() => s.decideLeave(l.id, false)} />

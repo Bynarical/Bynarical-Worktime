@@ -22,7 +22,7 @@ import {
   LocationConsent,
 } from './types';
 import { chainHash } from './hash';
-import { dateKey, ceilTimeToStep } from './time';
+import { dateKey, ceilTimeToStep, timeHM, hmToMinutes } from './time';
 import { supabase, isSupabaseConfigured } from './supabase';
 import * as api from './supabaseApi';
 
@@ -91,6 +91,10 @@ interface StoreValue {
   // 관리자 대리 편집(직원 연차)
   adminAddLeave: (userId: string, req: { date: string; hours: LeaveUnit; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
   adminDeleteLeave: (id: string) => Promise<void>;
+  // 근무 중 실시간 외출(중간 연차) — 시작/복귀/취소
+  startOuting: () => Promise<void>;
+  endOuting: () => Promise<void>;
+  cancelOuting: () => Promise<void>;
   addAdjustment: (userId: string, hours: number, note?: string) => Promise<void>;
 
   addConfirmation: (c: Omit<Confirmation, 'id' | 'prevHash' | 'hash'>) => Promise<void>;
@@ -493,6 +497,54 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase) await api.deleteLeave(id).catch((e) => console.warn('admin del leave', e));
   };
 
+  // 근무 중 외출(중간 연차): 진행 중인 외출 = 오늘자 CUSTOM·종료없음·승인대기
+  const openOuting = () => {
+    const d = dateKey();
+    return leaves.find(
+      (l) => l.userId === user?.id && l.date === d && l.segment === 'CUSTOM' && !l.endTime && l.status === 'REQUESTED'
+    );
+  };
+  const startOuting = async () => {
+    if (!user || openOuting()) return;
+    const lv: LeaveRequest = {
+      id: uid('lv'),
+      userId: user.id,
+      userName: user.name,
+      empNo: user.empNo,
+      date: dateKey(),
+      hours: 2,
+      segment: 'CUSTOM',
+      category: 'ANNUAL',
+      startTime: timeHM(Date.now()),
+      reason: '외출(중간 연차)',
+      status: 'REQUESTED',
+      requestedAt: new Date().toISOString(),
+    };
+    lv.prevHash = lastHash(myLeavesArr());
+    lv.hash = chainHash(lv.prevHash, lv as any);
+    setLeaves((prev) => [...prev, lv]);
+    if (supabase) await api.upsertLeave(lv, user.id).catch((e) => console.warn('outing start', e));
+  };
+  const endOuting = async () => {
+    if (!user) return;
+    const open = openOuting();
+    if (!open) return;
+    const endHM = timeHM(Date.now());
+    const diffMin = Math.max(0, hmToMinutes(endHM) - hmToMinutes(open.startTime || endHM));
+    const hours = Math.min(8, Math.max(2, Math.ceil(diffMin / 120) * 2)) as LeaveUnit; // 2시간 단위 올림
+    const upd: LeaveRequest = { ...open, endTime: endHM, hours };
+    upd.hash = chainHash(upd.prevHash || '', upd as any);
+    setLeaves((prev) => prev.map((l) => (l.id === open.id ? upd : l)));
+    if (supabase) await api.upsertLeave(upd, user.id).catch((e) => console.warn('outing end', e));
+  };
+  const cancelOuting = async () => {
+    if (!user) return;
+    const open = openOuting();
+    if (!open) return;
+    setLeaves((prev) => prev.filter((l) => l.id !== open.id));
+    if (supabase) await api.deleteLeave(open.id).catch((e) => console.warn('outing cancel', e));
+  };
+
   const addAdjustment = async (userId: string, hours: number, note?: string) => {
     const adj: LeaveAdjustment = { userId, hours, note, at: new Date().toISOString() };
     setAdjustments((prev) => [...prev, adj]);
@@ -658,6 +710,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       decideLeave,
       adminAddLeave,
       adminDeleteLeave,
+      startOuting,
+      endOuting,
+      cancelOuting,
       addAdjustment,
       addConfirmation,
       addWorkplace,

@@ -77,6 +77,10 @@ export default function Today() {
   const previewOutMin = workEndMinutes(previewStartMin, comp.requiredMinutes, policy);
   const state: 'before' | 'working' | 'done' = !rec?.checkIn ? 'before' : !rec?.checkOut ? 'working' : 'done';
   const workedNow = comp.workedMinutes;
+
+  // 외출(중간 연차)
+  const todayOutings = todaysLeaves.filter((l) => l.segment === 'CUSTOM');
+  const openOuting = todayOutings.find((l) => !l.endTime && l.status === 'REQUESTED');
   const remaining = Math.max(0, comp.requiredMinutes - workedNow);
   const progress = comp.requiredMinutes > 0 ? workedNow / comp.requiredMinutes : 0;
 
@@ -264,6 +268,39 @@ export default function Today() {
           </Muted>
           {minutesOfDay(now) >= hmToMinutes(policy.breakStart) && minutesOfDay(now) < hmToMinutes(policy.breakEnd) && (
             <Muted size={12}>🍽️ 현재 휴게시간입니다.</Muted>
+          )}
+
+          {/* 외출(중간 연차) — 근무 중에만 */}
+          <Divider />
+          {openOuting ? (
+            <>
+              <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <Body style={{ fontWeight: '700', color: t.trip }}>🚶 외출 중 · {openOuting.startTime}부터</Body>
+                <Badge text="복귀 전" color={t.trip} />
+              </Row>
+              <Row>
+                <View style={{ flex: 1 }}>
+                  <Button label="복귀" variant="success" small icon="↩️" onPress={() => s.endOuting()} />
+                </View>
+                <Button label="외출 취소" variant="neutral" small onPress={() => s.cancelOuting()} />
+              </Row>
+            </>
+          ) : (
+            <>
+              <Button label="외출 (중간 연차)" variant="outline" small icon="🚶" onPress={() => s.startOuting()} />
+              <Muted size={11}>외출 시 눌러 기록하고 복귀 시 다시 눌러 종료합니다. 외출 시간은 2시간 단위로 올림하여 연차 차감(관리자 승인 후 반영).</Muted>
+            </>
+          )}
+          {todayOutings.filter((l) => l.endTime).length > 0 && (
+            <View style={{ gap: 3 }}>
+              {todayOutings
+                .filter((l) => l.endTime)
+                .map((l) => (
+                  <Muted key={l.id} size={11}>
+                    · 외출 {l.startTime}~{l.endTime} · {l.hours}h {l.status === 'APPROVED' ? '(승인)' : l.status === 'REJECTED' ? '(반려)' : '(승인대기)'}
+                  </Muted>
+                ))}
+            </View>
           )}
         </Card>
       )}
