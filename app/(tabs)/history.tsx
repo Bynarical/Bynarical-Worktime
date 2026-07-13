@@ -153,7 +153,7 @@ export default function History() {
         </Row>
         <Row style={{ gap: 8 }}>
           <StatTile onHero label="근무일" value={`${summary.days}일`} />
-          <StatTile onHero label="총 실근로" value={minutesToKor(summary.totalWorked)} />
+          <StatTile onHero label="정상근무" value={`${summary.normalDays}일`} />
           <StatTile
             onHero
             label="근로부족"

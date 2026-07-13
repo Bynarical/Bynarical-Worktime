@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Card, Muted, Body, Badge, Row, Divider } from '@/components/ui';
 import { useTheme } from '@/lib/theme';
-import { computeDay, DayComputation } from '@/lib/attendance';
+import { computeDay, DayComputation, isNormalWorkday } from '@/lib/attendance';
 import { dateKey, minutesOfDay, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
 import { AttendanceRecord, LeaveRequest, WorkPolicy, Holiday } from '@/lib/types';
@@ -96,7 +96,7 @@ export function AttendanceCalendar({
 
   const sel = selected ? cells.find((c) => c.date === selected) : null;
 
-  const totalWorked = cells.reduce((s, c) => s + c.comp.workedMinutes, 0);
+  const normalDays = cells.filter((c) => isNormalWorkday(c.comp)).length;
   const workDays = cells.filter((c) => c.comp.hasCheckIn).length;
   const leaveDays = cells.filter((c) => c.comp.isFullLeave).length;
 
@@ -109,7 +109,7 @@ export function AttendanceCalendar({
         </Pressable>
         <View style={{ alignItems: 'center' }}>
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '800' }}>{monthLabel}</Text>
-          <Muted size={11}>근무 {workDays}일 · 실근로 {minutesToKor(totalWorked)}{leaveDays > 0 ? ` · 연차 ${leaveDays}일` : ''}</Muted>
+          <Muted size={11}>근무 {workDays}일 · 정상 {normalDays}일{leaveDays > 0 ? ` · 연차 ${leaveDays}일` : ''}</Muted>
         </View>
         <Pressable onPress={() => { monthOffset < 0 && setMonthOffset((v) => v + 1); setSelected(null); }} hitSlop={12}>
           <Text style={{ color: monthOffset >= 0 ? t.textFaint : t.primary, fontSize: 22, fontWeight: '700' }}>›</Text>

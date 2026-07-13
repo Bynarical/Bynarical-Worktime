@@ -261,6 +261,21 @@ export interface PeriodSummary {
   tripCount: number;
 }
 
+// 정상근무일: 소정근무일에 정상 출퇴근 완료 + 이상징후 없음(초과근무는 정상 포함).
+export function isNormalWorkday(c: DayComputation): boolean {
+  return (
+    c.isWorkday &&
+    !c.isFullLeave &&
+    c.hasCheckIn &&
+    c.hasCheckOut &&
+    !c.flags.late &&
+    !c.flags.coreViolation &&
+    !c.flags.earlyLeave &&
+    !c.flags.insufficient &&
+    !c.flags.missingClockOut
+  );
+}
+
 // 기간 집계
 export function summarize(computations: DayComputation[], records: AttendanceRecord[]): PeriodSummary {
   const s: PeriodSummary = {
@@ -282,18 +297,7 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
   };
   for (const c of computations) {
     if (c.hasCheckIn) s.days += 1;
-    if (
-      c.isWorkday &&
-      !c.isFullLeave &&
-      c.hasCheckIn &&
-      c.hasCheckOut &&
-      !c.flags.late &&
-      !c.flags.coreViolation &&
-      !c.flags.earlyLeave &&
-      !c.flags.insufficient &&
-      !c.flags.missingClockOut
-    )
-      s.normalDays += 1;
+    if (isNormalWorkday(c)) s.normalDays += 1;
     s.totalWorked += c.workedMinutes;
     s.totalRequired += c.requiredMinutes;
     s.leaveMinutes += c.leaveMinutes;
