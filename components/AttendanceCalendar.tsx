@@ -138,8 +138,11 @@ export function AttendanceCalendar({
           const partialLeave = c.comp.leaveMinutes > 0 && !c.comp.isFullLeave;
           const isHoliday = !!c.holidayName;
           const dow = c.weekday;
+          // 연차=보라(trip), 유급휴가(예비군·경조사 등)=초록(success) — 글씨 라벨과 동일 규칙
+          const leaveColor = c.comp.isPaidLeave ? t.success : t.trip;
+          const leaveSoft = c.comp.isPaidLeave ? t.successSoft : t.tripSoft;
           const numColor = c.comp.isFullLeave
-            ? t.trip
+            ? leaveColor
             : isHoliday || dow === 0
             ? t.danger
             : dow === 6
@@ -161,7 +164,7 @@ export function AttendanceCalendar({
                   backgroundColor: isSel
                     ? t.primarySoft
                     : c.comp.isFullLeave
-                    ? t.tripSoft
+                    ? leaveSoft
                     : isHoliday
                     ? t.dangerSoft
                     : 'transparent',
@@ -176,8 +179,8 @@ export function AttendanceCalendar({
                 <Row style={{ gap: 2, height: 6, alignItems: 'center' }}>
                   {okWork && <Dot color={t.success} />}
                   {anomaly && <Dot color={t.danger} />}
-                  {c.comp.isFullLeave && <Dot color={t.trip} />}
-                  {partialLeave && <Dot color={t.trip} />}
+                  {c.comp.isFullLeave && <Dot color={leaveColor} />}
+                  {partialLeave && <Dot color={leaveColor} />}
                 </Row>
               </View>
             </Pressable>
@@ -190,6 +193,7 @@ export function AttendanceCalendar({
         <Legend color={t.success} label="정상 근무" />
         <Legend color={t.danger} label="지각·부족·이상" />
         <Legend color={t.trip} label="연차" />
+        <Legend color={t.success} label="유급휴가" />
         <Legend color={t.danger} label="공휴일·휴무일" soft={t.dangerSoft} />
       </Row>
 
