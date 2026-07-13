@@ -23,7 +23,7 @@ import {
 } from './types';
 import { chainHash } from './hash';
 import { dateKey, ceilTimeToStep, timeHM, hmToMinutes } from './time';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, makeTempClient } from './supabase';
 import * as api from './supabaseApi';
 
 function uid(prefix: string): string {
@@ -72,6 +72,8 @@ interface StoreValue {
   adminCreateEmployee: (a: CreateEmployeeArgs) => Promise<AuthResult>;
   logout: () => Promise<void>;
   changePassword: (newPw: string) => Promise<AuthResult>;
+  verifyPassword: (password: string) => Promise<boolean>;
+  passwordChanged: boolean; // 초기 비밀번호에서 변경했는지
   updateProfile: (patch: Partial<User>) => Promise<void>;
   adminUpdateProfile: (userId: string, patch: { name?: string; empNo?: string; hireDate?: string; isAdmin?: boolean }) => Promise<void>;
   refresh: () => Promise<void>;
@@ -132,6 +134,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [meals, setMeals] = useState<MealAllowance[]>([]);
   const [consents, setConsents] = useState<LocationConsent[]>([]);
+  // 초기 비밀번호에서 한 번이라도 변경했는지 (auth user_metadata.password_changed)
+  const [passwordChanged, setPasswordChanged] = useState(true);
 
   const needsConfig = !isSupabaseConfigured;
 
@@ -166,6 +170,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.auth.getSession();
       if (data.session?.user) {
         await loadAll(data.session.user.id).catch(() => {});
+        setPasswordChanged(!!data.session.user.user_metadata?.password_changed);
         setAuthed(true);
       }
       setReady(true);
@@ -173,6 +178,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session?.user) {
           await loadAll(session.user.id).catch(() => {});
+          setPasswordChanged(!!session.user.user_metadata?.password_changed);
           setAuthed(true);
         } else if (event === 'SIGNED_OUT') {
           setAuthed(false);
@@ -279,8 +285,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const changePassword = async (newPw: string): Promise<AuthResult> => {
     if (!supabase) return { ok: false, error: '백엔드 미설정' };
-    const { error } = await supabase.auth.updateUser({ password: newPw });
-    return error ? { ok: false, error: error.message } : { ok: true };
+    const { error } = await supabase.auth.updateUser({ password: newPw, data: { password_changed: true } });
+    if (error) return { ok: false, error: error.message };
+    setPasswordChanged(true);
+    return { ok: true };
+  };
+
+  // 현재 로그인 사용자의 비밀번호 확인. 임시 클라이언트로 재인증해 본 세션에 영향 없음.
+  const verifyPassword = async (password: string): Promise<boolean> => {
+    if (!supabase) return false;
+    const { data } = await supabase.auth.getUser();
+    const email = data.user?.email;
+    if (!email) return false;
+    const temp = makeTempClient();
+    if (!temp) return false;
+    const { error } = await temp.auth.signInWithPassword({ email, password });
+    await temp.auth.signOut().catch(() => {});
+    return !error;
   };
 
   const updateProfile = async (patch: Partial<User>) => {
@@ -695,6 +716,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       adminCreateEmployee,
       logout,
       changePassword,
+      verifyPassword,
+      passwordChanged,
       updateProfile,
       adminUpdateProfile,
       refresh,
@@ -727,7 +750,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateLeavePolicy,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, consents]
+    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, consents, passwordChanged]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -245,16 +245,41 @@ function DataCard() {
   const s = useStore();
   const t = useTheme();
   const [confirm, setConfirm] = useState(false);
+  const [pw, setPw] = useState('');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setConfirm(false);
+    setPw('');
+    setMsg('');
+  }
+  async function doDelete() {
+    setMsg('');
+    if (!pw) { setMsg('비밀번호를 입력하세요.'); return; }
+    setBusy(true);
+    const ok = await s.verifyPassword(pw);
+    if (!ok) { setBusy(false); setMsg('비밀번호가 올바르지 않습니다.'); return; }
+    await s.clearAllRecords();
+    setBusy(false);
+    reset();
+  }
+
   return (
     <Card>
       <Row><Badge text="데이터 관리" color={t.danger} /></Row>
       {!confirm ? (
-        <Button label="내 근태 기록 전체 삭제" variant="outline" small onPress={() => setConfirm(true)} />
+        <Button label="내 근태 기록 전체 삭제" variant="outline" small onPress={() => { setConfirm(true); setPw(''); setMsg(''); }} />
       ) : (
-        <Row>
-          <Button label="정말 삭제" variant="danger" small style={{ flex: 1 }} onPress={async () => { await s.clearAllRecords(); setConfirm(false); }} />
-          <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => setConfirm(false)} />
-        </Row>
+        <>
+          <Muted size={12}>확인을 위해 본인 비밀번호를 입력하세요. 이 작업은 되돌릴 수 없습니다.</Muted>
+          <Field label="비밀번호" value={pw} onChangeText={setPw} secureTextEntry placeholder="본인 비밀번호" autoCapitalize="none" />
+          {msg ? <Muted size={12} style={{ color: t.danger }}>{msg}</Muted> : null}
+          <Row>
+            <Button label="정말 삭제" variant="danger" small style={{ flex: 1 }} loading={busy} onPress={doDelete} />
+            <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={reset} />
+          </Row>
+        </>
       )}
       <Muted size={11}>연차 신청/승인 내역은 유지됩니다. 근태 기록만 삭제됩니다.</Muted>
     </Card>

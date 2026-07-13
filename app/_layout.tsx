@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StoreProvider, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
+import { PasswordChangePrompt } from '@/components/PasswordChangePrompt';
 
 function Gate() {
   const { ready, authed, user } = useStore();
@@ -38,7 +39,12 @@ function Gate() {
       </View>
     );
   }
-  return <Slot />;
+  return (
+    <>
+      <Slot />
+      <PasswordChangePrompt />
+    </>
+  );
 }
 
 // 웹: 모던 한글 웹폰트(Pretendard) 전역 적용. RN Web가 각 텍스트에 font-family를 지정하므로 !important로 덮어씀.
