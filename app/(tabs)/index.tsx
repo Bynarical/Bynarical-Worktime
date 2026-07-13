@@ -347,7 +347,7 @@ export default function Today() {
           <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={{ fontWeight: '700', color: t.text }}>저녁식대 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(야근)</Text></Text>
-              <Muted size={12}>야근하며 저녁을 드셨으면 켜세요.</Muted>
+              <Muted size={12}>야근하며 저녁을 드셨으면 체크해주세요.</Muted>
             </View>
             <Row style={{ gap: 8, alignItems: 'center' }}>
               <Text style={{ fontSize: 13, fontWeight: '700', color: todayMeal ? t.success : t.textFaint }}>{todayMeal ? '먹음' : '안 먹음'}</Text>
