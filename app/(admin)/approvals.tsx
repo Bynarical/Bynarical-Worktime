@@ -22,6 +22,7 @@ import { shortHash } from '@/lib/hash';
 import { toCsv, exportCsv } from '@/lib/csv';
 import { AttendanceRecord } from '@/lib/types';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
+import { AdminDayEditor } from '@/components/AdminDayEditor';
 
 export default function Approvals() {
   const s = useStore();
@@ -41,6 +42,7 @@ export default function Approvals() {
   const [viewId, setViewId] = useState<string | null>(null);
   const [monthOffset, setMonthOffset] = useState(0);
   const [dayView, setDayView] = useState<'calendar' | 'list'>('calendar');
+  const [editDate, setEditDate] = useState<string | null>(null);
   const viewName = viewId ? s.profilesById[viewId]?.name || '' : '';
 
   const base = new Date();
@@ -204,22 +206,26 @@ export default function Approvals() {
           </Row>
 
           {dayView === 'calendar' ? (
-            <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} />
+            <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} onEditDay={setEditDate} />
           ) : (
             <>
               {dayRows.length === 0 && <Card><Muted>이 달의 기록이 없습니다</Muted></Card>}
               {dayRows.map((r) => (
-                <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} />
+                <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} onEdit={() => setEditDate(r.date)} />
               ))}
             </>
           )}
         </>
       )}
+
+      {editDate && viewId ? (
+        <AdminDayEditor userId={viewId} userName={viewName} date={editDate} onClose={() => setEditDate(null)} />
+      ) : null}
     </Screen>
   );
 }
 
-function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; comp: DayComputation }) {
+function DayCard({ date, rec, comp, onEdit }: { date: string; rec?: AttendanceRecord; comp: DayComputation; onEdit?: () => void }) {
   const t = useTheme();
   const wd = ['일', '월', '화', '수', '목', '금', '토'][new Date(date + 'T00:00:00Z').getUTCDay()];
   return (
@@ -248,6 +254,7 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
         </Row>
       )}
       {rec?.hash ? <Muted size={11}>해시 {shortHash(rec.hash)}</Muted> : null}
+      {onEdit ? <Button label="✏️ 근태 수정" variant="outline" small onPress={onEdit} /> : null}
     </Card>
   );
 }
