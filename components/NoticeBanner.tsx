@@ -14,7 +14,8 @@ export function NoticeBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  if (!s.authed) return null;
+  // 관리자에겐 안내 배너를 띄우지 않음
+  if (!s.authed || s.user?.isAdmin) return null;
   const expired = dateKey() > NOTICE_UNTIL;
   if (expired) return null;
 
