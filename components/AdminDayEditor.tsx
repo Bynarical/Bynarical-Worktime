@@ -199,7 +199,7 @@ export function AdminDayEditor({
                   </Row>
                 ))
               )}
-              <Muted size={11}>자리 비운 시간대를 입력하세요(HH:MM). 무단 이석은 점수에서 시간에 비례해 감점됩니다.</Muted>
+              <Muted size={11}>20분 이상 무통보 임의 이석 시 시간대를 입력하세요(HH:MM). 점수에서 시간에 비례해 감점됩니다. (근로자에겐 시간대 없이 횟수·총시간만 표시)</Muted>
               <Row style={{ alignItems: 'flex-end' }}>
                 <View style={{ flex: 1 }}>
                   <Field label="시작" value={aStart} onChangeText={setAStart} placeholder="14:00" autoCapitalize="none" keyboardType="numbers-and-punctuation" />

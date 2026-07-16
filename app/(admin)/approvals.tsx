@@ -224,7 +224,7 @@ export default function Approvals() {
           </Row>
 
           {dayView === 'calendar' ? (
-            <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} awayLogs={s.awayLogs} onEditDay={setEditDate} />
+            <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} onEditDay={setEditDate} />
           ) : (
             <>
               {dayRows.length === 0 && <Card><Muted>이 달의 기록이 없습니다</Muted></Card>}

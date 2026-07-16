@@ -70,6 +70,14 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
             </Card>
 
             <Card>
+              <Section emoji="🚸" title="자리비움 안내">
+                <Step><Text style={{ fontWeight: '700' }}>20분 이상 통보 없이 임의로</Text> 자리를 비우면 자리비움으로 기록될 수 있으며, 근태 점수에 반영됩니다.</Step>
+                <Step>잠깐 자리를 비울 땐 외출 기능을 쓰거나 미리 알려주세요.</Step>
+                <Step>본인 자리비움 <Text style={{ fontWeight: '700' }}>횟수·시간</Text>은 이력 탭 월 요약에서 확인할 수 있습니다.</Step>
+              </Section>
+            </Card>
+
+            <Card>
               <Section emoji="🌴" title="연차 · 휴가 신청 (연차 탭)">
                 <Step>연차는 <Text style={{ fontWeight: '700' }}>2시간 단위</Text>(반반차 2h · 반차 4h · 종일 8h)로 신청합니다.</Step>
                 <Step>오전(늦게 출근)/오후(일찍 퇴근)/종일/직접지정 중 선택 → 날짜·시간 고르고 <Text style={{ fontWeight: '700' }}>신청</Text>.</Step>
