@@ -16,6 +16,7 @@ import {
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
+import { HelpManual } from '@/components/HelpManual';
 import { getCurrentPoint, parseCoords } from '@/lib/geo';
 import { WorkPolicy } from '@/lib/types';
 
@@ -23,6 +24,7 @@ export default function Settings() {
   const s = useStore();
   const t = useTheme();
   const router = useRouter();
+  const [showHelp, setShowHelp] = useState(false);
 
   return (
     <Screen>
@@ -36,6 +38,7 @@ export default function Settings() {
           {s.user?.isAdmin && <Badge text="관리자 계정" color="#fff" soft="rgba(255,255,255,0.2)" />}
         </Row>
       </Hero>
+      <Button label="📖 앱 사용법 보기" variant="outline" onPress={() => setShowHelp(true)} />
       <ProfileCard />
       <WorkplacesCard />
       <AdminCard />
@@ -47,6 +50,7 @@ export default function Settings() {
         <KV k="근무제" v={`코어타임 ${s.settings.workPolicy.coreStart}–${s.settings.workPolicy.coreEnd}`} />
       </Card>
       <Button label="로그아웃" variant="neutral" onPress={async () => { await s.logout(); router.replace('/(auth)/login'); }} />
+      {showHelp && <HelpManual onClose={() => setShowHelp(false)} />}
     </Screen>
   );
 }

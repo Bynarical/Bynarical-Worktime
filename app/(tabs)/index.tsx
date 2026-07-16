@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Screen,
@@ -21,6 +21,7 @@ import {
   useTheme,
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
+import { HelpManual } from '@/components/HelpManual';
 import { getCurrentPoint, nearestWorkplace } from '@/lib/geo';
 import { computeDay, workEndMinutes } from '@/lib/attendance';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
@@ -49,6 +50,7 @@ export default function Today() {
   const [trip, setTrip] = useState(false);
   const [geoMsg, setGeoMsg] = useState('');
   const [confirmOutOfRange, setConfirmOutOfRange] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentMsg, setConsentMsg] = useState('');
 
@@ -169,11 +171,19 @@ export default function Today() {
             <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '600' }}>{today} · {WD[new Date(now).getDay()]}요일</Text>
             <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>{s.user?.name}님</Text>
           </View>
-          <Badge
-            text={state === 'working' ? '근무 중' : state === 'done' ? '근무 완료' : comp.isFullLeave ? '연차' : '출근 전'}
-            color="#fff"
-            soft="rgba(255,255,255,0.2)"
-          />
+          <Row style={{ gap: 8, alignItems: 'center' }}>
+            <Pressable
+              onPress={() => setShowHelp(true)}
+              style={{ backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>📖 사용법</Text>
+            </Pressable>
+            <Badge
+              text={state === 'working' ? '근무 중' : state === 'done' ? '근무 완료' : comp.isFullLeave ? '연차' : '출근 전'}
+              color="#fff"
+              soft="rgba(255,255,255,0.2)"
+            />
+          </Row>
         </Row>
 
         {state === 'working' ? (
@@ -384,6 +394,8 @@ export default function Today() {
 
       {state === 'done' && <Button label="이력 보기" variant="outline" onPress={() => router.push('/(tabs)/history')} />}
       <Divider />
+
+      {showHelp && <HelpManual onClose={() => setShowHelp(false)} />}
     </Screen>
   );
 }
