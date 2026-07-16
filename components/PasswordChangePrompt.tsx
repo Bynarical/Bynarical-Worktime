@@ -76,6 +76,7 @@ export function PasswordChangePrompt() {
             <Divider />
             <Text style={{ fontWeight: '700', color: t.text, fontSize: 14 }}>② 비밀번호 변경</Text>
             <Muted size={12}>초기(관리자 지정) 비밀번호를 본인만 아는 것으로 바꿔주세요.</Muted>
+            <Muted size={12} style={{ color: t.success }}>🔒 비밀번호는 암호화되어 저장되며, 관리자도 알 수 없습니다.</Muted>
             <Field label="새 비밀번호" value={pw} onChangeText={setPw} secureTextEntry placeholder="6자 이상" autoCapitalize="none" />
             <Field label="새 비밀번호 확인" value={pw2} onChangeText={setPw2} secureTextEntry placeholder="다시 입력" autoCapitalize="none" />
 
