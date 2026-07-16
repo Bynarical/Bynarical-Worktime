@@ -82,11 +82,6 @@ export default function History() {
     [dayRows, myRecords]
   );
 
-  // 무단이탈 월 집계 (시간대는 표시하지 않고 횟수·총시간만)
-  const awayMonth = useMemo(() => {
-    const list = s.awayLogs.filter((a) => a.userId === viewId && a.date.startsWith(monthPrefix));
-    return { count: list.length, minutes: list.reduce((x, a) => x + (a.minutes || 0), 0) };
-  }, [s.awayLogs, viewId, monthPrefix]);
 
   // 주간 그룹 (월요일 시작)
   const weeks = useMemo(() => {
@@ -172,11 +167,6 @@ export default function History() {
           <StatTile onHero label="지각" value={`${summary.lateCount}회`} />
           <StatTile onHero label="코어위반" value={`${summary.coreViolationCount}회`} />
         </Row>
-        {awayMonth.count > 0 && (
-          <Text style={{ color: t.onHeroDim, fontSize: 12 }}>
-            🚸 무단이탈 {awayMonth.count}회 · {minutesToKor(awayMonth.minutes)} (20분 이상 무통보 이석)
-          </Text>
-        )}
         <Pressable
           onPress={onExport}
           style={{ backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}

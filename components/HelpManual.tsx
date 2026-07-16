@@ -78,12 +78,10 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
 
             <Card>
               <Section emoji="🚸" title="무단이탈 안내">
-                <Step><Text style={{ fontWeight: '700' }}>20분 이상 통보 없이 임의로</Text> 자리를 비우면 무단이탈로 기록될 수 있습니다.</Step>
-                <Step>가끔 개인 사정으로 <Text style={{ fontWeight: '700' }}>일시적으로 발생</Text>하는 것은 이해하며, 점수에 큰 불이익은 없습니다.</Step>
-                <Step>다만 <Text style={{ fontWeight: '700' }}>정기적·자주</Text> 발생하면 종합 근태점수에서 불이익이 커질 수 있습니다.</Step>
-                <Step><Text style={{ fontWeight: '700' }}>관리자에게 미리 말하고</Text> 자리를 비우면 무단이탈로 잡히지 않습니다(패널티 없음).</Step>
+                <Step>회사는 근태 관리를 위해 <Text style={{ fontWeight: '700' }}>20분 이상 통보 없이 임의로</Text> 자리를 비우는 경우(무단이탈)도 기록·관리하고 있습니다.</Step>
+                <Step>가끔 개인 사정으로 <Text style={{ fontWeight: '700' }}>일시적으로 발생</Text>하는 것은 이해하며 큰 불이익은 없지만, <Text style={{ fontWeight: '700' }}>정기적·자주</Text> 발생하면 종합 근태점수에 불이익이 될 수 있습니다.</Step>
+                <Step><Text style={{ fontWeight: '700' }}>관리자에게 미리 말하고</Text> 자리를 비우면 무단이탈로 잡히지 않습니다.</Step>
                 <Step>개인 휴식은 <Text style={{ fontWeight: '700' }}>점심 휴게 1시간</Text>({wp.breakStart}–{wp.breakEnd})을 최대한 활용해 주세요.</Step>
-                <Step>본인 무단이탈 <Text style={{ fontWeight: '700' }}>횟수·시간</Text>은 이력 탭 월 요약에서 확인할 수 있습니다.</Step>
               </Section>
             </Card>
 
