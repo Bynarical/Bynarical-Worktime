@@ -23,6 +23,8 @@ import { toCsv, exportCsv } from '@/lib/csv';
 import { AttendanceRecord } from '@/lib/types';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
 import { AdminDayEditor } from '@/components/AdminDayEditor';
+import { computeAttendanceScore } from '@/lib/attendanceScore';
+import { AttendanceScoreCard } from '@/components/AttendanceScoreCard';
 
 export default function Approvals() {
   const s = useStore();
@@ -72,6 +74,13 @@ export default function Approvals() {
   }, [s.records, s.leaves, viewId, monthPrefix, policy]);
 
   const summary = useMemo(() => summarize(dayRows.map((r) => r.comp), dayRows.map((r) => r.rec).filter(Boolean) as AttendanceRecord[]), [dayRows]);
+
+  // 선택 직원 연간 근태 점수(올해)
+  const curYear = parseInt(dateKey().slice(0, 4), 10);
+  const yearScore = useMemo(
+    () => (viewId ? computeAttendanceScore(viewId, curYear, s.records, s.leaves, policy, s.holidaySet, dateKey(), s.profilesById[viewId]?.hireDate) : null),
+    [viewId, curYear, s.records, s.leaves, policy, s.holidaySet, s.profilesById]
+  );
 
   function onExport() {
     const headers = ['날짜', '유형', '계획출근', '출근', '퇴근', '실근로(분)', '소정(분)', '연차(분)', '초과/부족(분)', '상태', '해시'];
@@ -200,6 +209,8 @@ export default function Approvals() {
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>⬇ CSV 내보내기</Text>
             </Pressable>
           </Hero>
+
+          {yearScore && <AttendanceScoreCard name={viewName} score={yearScore} />}
 
           <Row style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
             <Text style={{ fontWeight: '700', color: t.text }}>일별 기록</Text>

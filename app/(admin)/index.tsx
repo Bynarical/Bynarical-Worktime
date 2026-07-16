@@ -14,11 +14,13 @@ import {
   StatTile,
   Button,
 } from '@/components/ui';
-import { useStore } from '@/lib/store';
+import { useStore, isEmployeeAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { dateKey, minutesToHM, minutesToKor, minutesOfDay } from '@/lib/time';
 import { hoursToDayLabel } from '@/lib/leave';
 import { buildEmployeeOverview, EmployeeOverview, OverviewInput, TodayStatus } from '@/lib/adminOverview';
+import { computeAttendanceScore } from '@/lib/attendanceScore';
+import { AttendanceScoreCard, gradeColor } from '@/components/AttendanceScoreCard';
 
 const STATUS_META: Record<TodayStatus, { label: string; tone: 'primary' | 'success' | 'trip' | 'faint' }> = {
   WORKING: { label: '근무 중', tone: 'primary' },
@@ -32,9 +34,12 @@ export default function AdminDashboard() {
   const t = useTheme();
   const router = useRouter();
   const today = dateKey();
+  const currentYear = parseInt(today.slice(0, 4), 10);
   const [monthOffset, setMonthOffset] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [onlyWarnings, setOnlyWarnings] = useState(false);
+  const [scoreYear, setScoreYear] = useState(currentYear);
+  const [scoreSel, setScoreSel] = useState<string | null>(null);
 
   const base = new Date();
   base.setMonth(base.getMonth() + monthOffset);
@@ -75,6 +80,21 @@ export default function AdminDashboard() {
   const pendingRecCount = s.records.filter((r) => r.pending).length;
 
   const shown = onlyWarnings ? overviews.filter((o) => o.hasWarning) : overviews;
+
+  // 연간 근태 점수 랭킹
+  const scores = useMemo(() => {
+    const emps = Object.entries(s.profilesById)
+      .filter(([id, p]) => id !== s.user?.id && isEmployeeAccount(p))
+      .map(([id, p]) => ({ id, name: p.name, hireDate: p.hireDate }));
+    return emps
+      .map((e) => ({
+        id: e.id,
+        name: e.name,
+        score: computeAttendanceScore(e.id, scoreYear, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, today, e.hireDate),
+      }))
+      .sort((a, b) => b.score.score - a.score.score || a.name.localeCompare(b.name, 'ko'));
+  }, [s.profilesById, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, scoreYear, today, s.user]);
+  const selScore = scores.find((x) => x.id === scoreSel);
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -122,6 +142,55 @@ export default function AdminDashboard() {
           )}
         </Card>
       )}
+
+      {/* 연간 근태 점수 랭킹 */}
+      <Card>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontWeight: '700', color: t.text }}>🏅 연간 근태 점수</Text>
+          <Row style={{ gap: 10, alignItems: 'center' }}>
+            <Pressable onPress={() => setScoreYear((y) => y - 1)} hitSlop={10}>
+              <Text style={{ color: t.primary, fontSize: 18, fontWeight: '700' }}>‹</Text>
+            </Pressable>
+            <Text style={{ color: t.text, fontSize: 15, fontWeight: '800' }}>{scoreYear}년</Text>
+            <Pressable onPress={() => scoreYear < currentYear && setScoreYear((y) => y + 1)} hitSlop={10}>
+              <Text style={{ color: scoreYear >= currentYear ? t.textFaint : t.primary, fontSize: 18, fontWeight: '700' }}>›</Text>
+            </Pressable>
+          </Row>
+        </Row>
+        <Muted size={11}>연봉 협상 참고용 · 정상근무 100점 기준, 초과근무 가점·이상 감점. 행을 누르면 상세.</Muted>
+        {scores.length === 0 && <Muted size={12}>직원이 없습니다.</Muted>}
+        {scores.map((r, i) => {
+          const gc = gradeColor(t, r.score.grade);
+          const sc = r.score;
+          return (
+            <Pressable key={r.id} onPress={() => setScoreSel((v) => (v === r.id ? null : r.id))}>
+              <Divider />
+              <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <Row style={{ gap: 8, alignItems: 'center', flexShrink: 1 }}>
+                  <Text style={{ color: t.textFaint, fontSize: 13, fontWeight: '800', width: 18 }}>{i + 1}</Text>
+                  <Body style={{ fontWeight: '700' }}>{r.name}</Body>
+                  {sc.scheduledDays > 0 && <Badge text={`${sc.grade}`} color={gc} />}
+                </Row>
+                <Row style={{ gap: 3, alignItems: 'flex-end' }}>
+                  {sc.scheduledDays > 0 ? (
+                    <>
+                      <Text style={{ color: gc, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 }}>{sc.score}</Text>
+                      <Text style={{ color: t.textFaint, fontSize: 11, marginBottom: 3 }}>점</Text>
+                    </>
+                  ) : (
+                    <Text style={{ color: t.textFaint, fontSize: 13, marginBottom: 3 }}>데이터 없음</Text>
+                  )}
+                </Row>
+              </Row>
+              <Muted size={11}>
+                정상 {sc.normalDays}/{sc.scheduledDays}일 · 지각 {sc.lateCount} · 부족 {sc.shortfallDays} · 결근 {sc.absentDays}
+                {sc.overtimeBonus > 0 ? ` · 초과 +${sc.overtimeBonus}` : ''}
+              </Muted>
+            </Pressable>
+          );
+        })}
+      </Card>
+      {selScore && <AttendanceScoreCard name={selScore.name} score={selScore.score} />}
 
       {/* 월 이동 */}
       <Card>
