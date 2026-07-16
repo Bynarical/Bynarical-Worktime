@@ -14,7 +14,7 @@ import {
   StatTile,
   Field,
 } from '@/components/ui';
-import { useStore, isEmployeeAccount } from '@/lib/store';
+import { useStore, isActiveEmployee } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeDay, summarize, DayComputation } from '@/lib/attendance';
 import {
@@ -43,7 +43,7 @@ export default function History() {
   const viewId = viewUserId ?? meId; // 관리자가 다른 직원을 볼 수 있음
   const isSelf = viewId === meId;
   const viewName = (viewId ? s.profilesById[viewId]?.name || s.user?.name : '') || '';
-  const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter(isEmployeeAccount);
+  const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter(isActiveEmployee);
 
   const base = new Date();
   base.setMonth(base.getMonth() + monthOffset);

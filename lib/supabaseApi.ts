@@ -162,14 +162,31 @@ export interface ProfileBrief {
   empNo?: string;
   hireDate?: string;
   isAdmin?: boolean;
+  archived?: boolean;
 }
 export async function fetchProfilesMap(): Promise<Record<string, ProfileBrief>> {
-  const { data } = await sb().from('profiles').select('id,name,emp_no,hire_date,is_admin');
+  const { data } = await sb().from('profiles').select('id,name,emp_no,hire_date,is_admin,archived_at');
   const map: Record<string, ProfileBrief> = {};
   (data || []).forEach(
-    (p: any) => (map[p.id] = { name: p.name, empNo: p.emp_no || undefined, hireDate: p.hire_date || undefined, isAdmin: !!p.is_admin })
+    (p: any) =>
+      (map[p.id] = {
+        name: p.name,
+        empNo: p.emp_no || undefined,
+        hireDate: p.hire_date || undefined,
+        isAdmin: !!p.is_admin,
+        archived: !!p.archived_at,
+      })
   );
   return map;
+}
+
+// 직원 아카이브(퇴사) 처리 / 복구
+export async function setProfileArchived(userId: string, archived: boolean) {
+  const { error } = await sb()
+    .from('profiles')
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq('id', userId);
+  if (error) throw error;
 }
 
 export async function updateProfileRow(userId: string, patch: Partial<User>) {

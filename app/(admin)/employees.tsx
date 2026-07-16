@@ -15,7 +15,7 @@ import {
   Switch,
   StatTile,
 } from '@/components/ui';
-import { useStore, isEmployeeAccount } from '@/lib/store';
+import { useStore, isActiveEmployee, isEmployeeAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeBalance, hoursToDayLabel } from '@/lib/leave';
 import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
@@ -27,11 +27,37 @@ export default function Employees() {
   const leavePolicy = s.settings.leavePolicy;
 
   const employees = useMemo(
-    () => Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter(isEmployeeAccount),
+    () => Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter(isActiveEmployee),
+    [s.profilesById]
+  );
+  const archivedEmployees = useMemo(
+    () => Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter((e) => isEmployeeAccount(e) && e.archived),
     [s.profilesById]
   );
   // 관리자 수는 전체 프로필 기준(관리자 전용 계정 포함)
   const adminCount = useMemo(() => Object.values(s.profilesById).filter((p) => p.isAdmin).length, [s.profilesById]);
+
+  // 퇴사(아카이브)/삭제
+  const [archiveMsg, setArchiveMsg] = useState('');
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+
+  async function doArchive(userId: string, archived: boolean) {
+    setArchiveMsg('');
+    await s.adminArchiveEmployee(userId, archived);
+    if (adjUser === userId) setAdjUser('');
+    setArchiveMsg(archived ? '✓ 퇴사(아카이브) 처리되었습니다.' : '✓ 복구되었습니다.');
+  }
+  async function doDelete(userId: string) {
+    setArchiveMsg('');
+    setDelBusy(true);
+    const r = await s.adminDeleteEmployee(userId);
+    setDelBusy(false);
+    setConfirmDel(null);
+    if (!r.ok) return setArchiveMsg(r.error || '삭제 실패');
+    if (adjUser === userId) setAdjUser('');
+    setArchiveMsg('✓ 영구 삭제되었습니다.');
+  }
 
   const balanceFor = (id: string) => {
     const p = s.profilesById[id];
@@ -224,10 +250,58 @@ export default function Employees() {
                 <LeaveYearBreakdown buckets={b.buckets} fullDay={leavePolicy.fullDayHours} title="연차 연도별 내역" />
               ) : null;
             })()}
+            <Divider />
+            <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Body style={{ fontWeight: '600' }}>퇴사 처리</Body>
+                <Muted size={12}>아카이브 시 활성 목록에서 제외되고 기록은 보존(증거)됩니다. 복구 가능.</Muted>
+              </View>
+              <Button label="퇴사(아카이브)" variant="warning" small onPress={() => doArchive(adjUser, true)} />
+            </Row>
+            <Button label="완전 삭제" variant="danger" small onPress={() => setConfirmDel(adjUser)} />
+            {confirmDel === adjUser && (
+              <Card style={{ borderColor: t.danger, borderWidth: 1 }}>
+                <Muted size={12} style={{ color: t.danger }}>계정과 모든 근태·연차 기록이 영구 삭제됩니다. 되돌릴 수 없습니다. 보존이 필요하면 '퇴사(아카이브)'를 쓰세요.</Muted>
+                <Row>
+                  <Button label="영구 삭제" variant="danger" small style={{ flex: 1 }} loading={delBusy} onPress={() => doDelete(adjUser)} />
+                  <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => setConfirmDel(null)} />
+                </Row>
+              </Card>
+            )}
+            {archiveMsg ? <Muted size={12} style={{ color: archiveMsg.startsWith('✓') ? t.success : t.danger }}>{archiveMsg}</Muted> : null}
           </>
         ) : (
           <Muted size={12}>편집하거나 연차를 조정할 직원을 선택하세요.</Muted>
         )}
+      </Card>
+
+      {/* 퇴사·아카이브 직원 */}
+      <Card>
+        <Text style={{ fontWeight: '700', color: t.text }}>퇴사 · 아카이브 직원 ({archivedEmployees.length})</Text>
+        <Muted size={12}>활성 목록에서 제외되며 기록은 증거로 보존됩니다. 복구하거나 완전 삭제할 수 있습니다.</Muted>
+        {archivedEmployees.length === 0 && <Muted size={12}>아카이브된 직원이 없습니다.</Muted>}
+        {archivedEmployees.map((e) => (
+          <View key={e.id} style={{ gap: 4 }}>
+            <Divider />
+            <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <Body style={{ fontWeight: '600' }}>{e.name}{e.empNo ? ` (${e.empNo})` : ''}</Body>
+              <Row style={{ gap: 6 }}>
+                <Button label="복구" variant="neutral" small onPress={() => doArchive(e.id, false)} />
+                <Button label="삭제" variant="danger" small onPress={() => setConfirmDel(e.id)} />
+              </Row>
+            </Row>
+            {confirmDel === e.id && (
+              <Card style={{ borderColor: t.danger, borderWidth: 1 }}>
+                <Muted size={12} style={{ color: t.danger }}>{e.name}님의 계정과 모든 기록이 영구 삭제됩니다. 되돌릴 수 없습니다.</Muted>
+                <Row>
+                  <Button label="영구 삭제" variant="danger" small style={{ flex: 1 }} loading={delBusy} onPress={() => doDelete(e.id)} />
+                  <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => setConfirmDel(null)} />
+                </Row>
+              </Card>
+            )}
+          </View>
+        ))}
+        {archiveMsg ? <Muted size={12} style={{ color: archiveMsg.startsWith('✓') ? t.success : t.danger }}>{archiveMsg}</Muted> : null}
       </Card>
     </Screen>
   );

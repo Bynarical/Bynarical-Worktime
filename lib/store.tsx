@@ -37,6 +37,10 @@ function uid(prefix: string): string {
 export function isEmployeeAccount(p: { isAdmin?: boolean; hireDate?: string }): boolean {
   return !(p.isAdmin && !p.hireDate);
 }
+// 현재 재직 중인 직원(관리자 전용 계정·아카이브(퇴사) 제외) — 활성 목록/선택/집계용.
+export function isActiveEmployee(p: { isAdmin?: boolean; hireDate?: string; archived?: boolean }): boolean {
+  return isEmployeeAccount(p) && !p.archived;
+}
 
 interface CreateEmployeeArgs {
   email: string;
@@ -62,7 +66,7 @@ interface StoreValue {
   leaves: LeaveRequest[];
   adjustments: LeaveAdjustment[];
   confirmations: Confirmation[];
-  profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>;
+  profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean; archived?: boolean }>;
   holidays: Holiday[];
   holidaySet: Set<string>;
   meals: MealAllowance[];
@@ -78,6 +82,8 @@ interface StoreValue {
   passwordChanged: boolean; // 초기 비밀번호에서 변경했는지
   updateProfile: (patch: Partial<User>) => Promise<void>;
   adminUpdateProfile: (userId: string, patch: { name?: string; empNo?: string; hireDate?: string; isAdmin?: boolean }) => Promise<void>;
+  adminArchiveEmployee: (userId: string, archived: boolean) => Promise<void>;
+  adminDeleteEmployee: (userId: string) => Promise<{ ok: boolean; error?: string }>;
   refresh: () => Promise<void>;
 
   checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean; pending?: boolean }) => Promise<void>;
@@ -135,7 +141,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [adjustments, setAdjustments] = useState<LeaveAdjustment[]>([]);
   const [confirmations, setConfirmations] = useState<Confirmation[]>([]);
-  const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>>({});
+  const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean; archived?: boolean }>>({});
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [meals, setMeals] = useState<MealAllowance[]>([]);
   const [awayLogs, setAwayLogs] = useState<AwayLog[]>([]);
@@ -338,6 +344,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         empNo: patch.empNo ?? prev[userId]?.empNo,
         hireDate: patch.hireDate ?? prev[userId]?.hireDate,
         isAdmin: patch.isAdmin ?? prev[userId]?.isAdmin,
+        archived: prev[userId]?.archived,
       },
     }));
     if (userId === user?.id) {
@@ -345,6 +352,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setUser(u);
       await setItem(STORAGE_KEYS.USER, u);
     }
+  };
+
+  // 관리자: 직원 아카이브(퇴사) 처리 / 복구 — 데이터는 보존, 활성 목록에서만 제외
+  const adminArchiveEmployee: StoreValue['adminArchiveEmployee'] = async (userId, archived) => {
+    setProfilesById((prev) => ({ ...prev, [userId]: { ...(prev[userId] || { name: '' }), archived } }));
+    if (supabase) await api.setProfileArchived(userId, archived).catch((e) => console.warn('archive', e));
+  };
+  // 관리자: 직원 영구 삭제 (Edge Function → auth 사용자 삭제, 관련 데이터 CASCADE)
+  const adminDeleteEmployee: StoreValue['adminDeleteEmployee'] = async (userId) => {
+    if (!supabase) return { ok: false, error: '백엔드 미설정' };
+    const { data, error } = await supabase.functions.invoke('delete-employee', { body: { userId } });
+    if (error) return { ok: false, error: '삭제 함수 호출 실패 (Edge Function 배포 확인)' };
+    if (data && (data as any).ok === false) return { ok: false, error: (data as any).error || '삭제 실패' };
+    await refresh();
+    return { ok: true };
   };
 
   // ---- helpers ----
@@ -764,6 +786,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       passwordChanged,
       updateProfile,
       adminUpdateProfile,
+      adminArchiveEmployee,
+      adminDeleteEmployee,
       refresh,
       checkIn,
       checkOut,

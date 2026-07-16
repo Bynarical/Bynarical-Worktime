@@ -14,7 +14,7 @@ import {
   StatTile,
   Button,
 } from '@/components/ui';
-import { useStore, isEmployeeAccount } from '@/lib/store';
+import { useStore, isActiveEmployee } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { dateKey, minutesToHM, minutesToKor, minutesOfDay } from '@/lib/time';
 import { hoursToDayLabel } from '@/lib/leave';
@@ -63,7 +63,7 @@ export default function AdminDashboard() {
       today,
       nowMin: minutesOfDay(Date.now()),
     };
-    const staffIds = Object.keys(s.profilesById).filter((id) => id !== s.user?.id);
+    const staffIds = Object.keys(s.profilesById).filter((id) => id !== s.user?.id && !s.profilesById[id]?.archived);
     const list = staffIds.map((id) => buildEmployeeOverview(id, input));
     // 정렬: 경고 있는 직원 먼저, 그다음 이름순
     return list.sort((a, b) => {
@@ -84,7 +84,7 @@ export default function AdminDashboard() {
   // 연간 근태 점수 랭킹
   const scores = useMemo(() => {
     const emps = Object.entries(s.profilesById)
-      .filter(([id, p]) => id !== s.user?.id && isEmployeeAccount(p))
+      .filter(([id, p]) => id !== s.user?.id && isActiveEmployee(p))
       .map(([id, p]) => ({ id, name: p.name, hireDate: p.hireDate }));
     return emps
       .map((e) => ({
