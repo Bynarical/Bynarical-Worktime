@@ -282,7 +282,7 @@ export async function deleteMeal(id: string) {
   if (error) throw error;
 }
 
-// ---------- 자리비움(관리자 기록) ----------
+// ---------- 무단이탈(관리자 기록) ----------
 export async function fetchAwayLogs(): Promise<AwayLog[]> {
   const { data } = await sb().from('away_logs').select('*').order('date', { ascending: false });
   return (data || []).map((a: any) => ({

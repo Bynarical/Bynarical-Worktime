@@ -82,7 +82,7 @@ export default function History() {
     [dayRows, myRecords]
   );
 
-  // 자리비움 월 집계 (시간대는 표시하지 않고 횟수·총시간만)
+  // 무단이탈 월 집계 (시간대는 표시하지 않고 횟수·총시간만)
   const awayMonth = useMemo(() => {
     const list = s.awayLogs.filter((a) => a.userId === viewId && a.date.startsWith(monthPrefix));
     return { count: list.length, minutes: list.reduce((x, a) => x + (a.minutes || 0), 0) };
@@ -174,7 +174,7 @@ export default function History() {
         </Row>
         {awayMonth.count > 0 && (
           <Text style={{ color: t.onHeroDim, fontSize: 12 }}>
-            🚸 자리비움 {awayMonth.count}회 · {minutesToKor(awayMonth.minutes)} (20분 이상 무통보 이석)
+            🚸 무단이탈 {awayMonth.count}회 · {minutesToKor(awayMonth.minutes)} (20분 이상 무통보 이석)
           </Text>
         )}
         <Pressable

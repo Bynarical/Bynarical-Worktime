@@ -1,6 +1,6 @@
 // 연간 근태 점수 — 감점(이상)+가점(초과근무) · analog(분 단위 비례) 방식.
-// "정시·성실 근무 = 100(불이익 없음), 초과근무 = 100 초과, 이상/자리비움 = 시간에 비례 감점".
-// 지각·부족·조기퇴근·자리비움은 '얼마나'(분)를 반영해 비례 감점. 결근/코어위반/퇴근미기록은 건당.
+// "정시·성실 근무 = 100(불이익 없음), 초과근무 = 100 초과, 이상/무단이탈 = 시간에 비례 감점".
+// 지각·부족·조기퇴근·무단이탈은 '얼마나'(분)를 반영해 비례 감점. 결근/코어위반/퇴근미기록은 건당.
 // 연차·유급휴가는 정상으로 간주. 진행 중인 당일은 판정 제외.
 // 집계 창은 실제 추적 시작(연초·입사일·첫 기록/연차일 중 가장 늦은 날)부터 → 도입 전 거짓 결근 방지.
 import { AttendanceRecord, LeaveRequest, AwayLog, WorkPolicy } from './types';
@@ -12,7 +12,9 @@ export const SCORE_WEIGHTS = {
   latePerHour: 3, // 지각(늦은 시간)
   shortfallPerHour: 3, // 근로부족(부족한 시간)
   earlyLeavePerHour: 2.5, // 조기퇴근(일찍 간 시간)
-  awayPerHour: 3, // 자리비움(관리자 기록)
+  awayPerHour: 3, // 무단이탈(관리자 기록) 시간 비례 기본 감점
+  awayFreeCount: 3, // 이 횟수까지는 빈도 가중 없음(일시적 개인사정 이해)
+  awayRepeatPenalty: 5, // 초과 1회당 추가 감점(정기·잦은 이탈 = 큰 불이익)
   overtimePerHour: 0.25, // 초과근무 가점(시간당) = 4시간당 +1 (열심히 한 사람 우대)
   overtimeCap: 25, // 초과근무 가점 상한
   // 건당 감점(이벤트성)
@@ -156,20 +158,19 @@ export function computeAttendanceScore(
     if (isNormalWorkday(comp)) normalDays += 1;
   }
 
-  // 자리비움 — 집계 창 내 날짜만 합산
+  // 무단이탈 — 집계 창 내 날짜만 합산
   const myAway = awayLogs.filter((a) => a.userId === userId && a.date >= start && a.date < endExcl);
   const awayCount = myAway.length;
   const awayMinutes = myAway.reduce((s, a) => s + (a.minutes || 0), 0);
 
   const w = SCORE_WEIGHTS;
   const analogDeduction =
-    (lateMinutes * w.latePerHour +
-      shortfallMinutes * w.shortfallPerHour +
-      earlyLeaveMinutes * w.earlyLeavePerHour +
-      awayMinutes * w.awayPerHour) /
-    60;
+    (lateMinutes * w.latePerHour + shortfallMinutes * w.shortfallPerHour + earlyLeaveMinutes * w.earlyLeavePerHour) / 60;
+  // 무단이탈: 시간 비례 기본 감점 + 잦을수록(빈도) 가중. 일시적(freeCount 이하)이면 가중 없음.
+  const awayDeduction =
+    (awayMinutes / 60) * w.awayPerHour + Math.max(0, awayCount - w.awayFreeCount) * w.awayRepeatPenalty;
   const eventDeduction = absentDays * w.absentPerDay + coreViolationCount * w.coreViolation + missingCount * w.missing;
-  const deductionTotal = analogDeduction + eventDeduction;
+  const deductionTotal = analogDeduction + awayDeduction + eventDeduction;
   const overtimeBonus = Math.min(w.overtimeCap, (overtimeMinutes / 60) * w.overtimePerHour);
   const rawScore = 100 - deductionTotal + overtimeBonus;
   const score = Math.round(Math.max(0, Math.min(100 + w.overtimeCap, rawScore)));

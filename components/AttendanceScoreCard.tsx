@@ -70,7 +70,11 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
               <DedRow label={`근로부족 ${score.shortfallDays}회`} detail={`${score.shortfallMinutes}분`} points={(score.shortfallMinutes * w.shortfallPerHour) / 60} />
               <DedRow label={`지각 ${score.lateCount}회`} detail={`${score.lateMinutes}분`} points={(score.lateMinutes * w.latePerHour) / 60} />
               <DedRow label={`조기퇴근 ${score.earlyLeaveCount}회`} detail={`${score.earlyLeaveMinutes}분`} points={(score.earlyLeaveMinutes * w.earlyLeavePerHour) / 60} />
-              <DedRow label={`자리비움 ${score.awayCount}건`} detail={`${score.awayMinutes}분`} points={(score.awayMinutes * w.awayPerHour) / 60} />
+              <DedRow
+                label={`무단이탈 ${score.awayCount}건`}
+                detail={`${score.awayMinutes}분${score.awayCount > w.awayFreeCount ? ' · 잦음 가중' : ''}`}
+                points={(score.awayMinutes * w.awayPerHour) / 60 + Math.max(0, score.awayCount - w.awayFreeCount) * w.awayRepeatPenalty}
+              />
               <DedRow label={`코어타임 미충족 ${score.coreViolationCount}회`} points={score.coreViolationCount * w.coreViolation} />
               <DedRow label={`퇴근 미기록 ${score.missingCount}회`} points={score.missingCount * w.missing} />
             </>
@@ -78,7 +82,7 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
             <Muted size={12}>감점 없음 — 성실 근무 👍</Muted>
           )}
           <Muted size={11} style={{ marginTop: 4 }}>
-            지각·부족·조기퇴근·자리비움은 시간(분)에 비례해 감점됩니다. 연차·유급휴가는 정상. 100점 = A, 초과근무 가점 시 100 초과(S).
+            지각·부족·조기퇴근은 시간(분)에 비례, 무단이탈은 시간 + 잦을수록 가중 감점. 연차·유급휴가는 정상. 100점 = A, 초과근무 가점 시 100 초과(S).
           </Muted>
         </>
       )}

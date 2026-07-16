@@ -46,6 +46,13 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
               처음이신가요? 아래 순서대로 보시면 금방 익숙해집니다. 대부분 화면의 큰 버튼만 눌러도 됩니다. 🙂
             </Muted>
 
+            <Card style={{ borderColor: t.primary, borderWidth: 1 }}>
+              <Section emoji="📌" title="꼭 알아두세요">
+                <Step>여기 기록되는 <Text style={{ fontWeight: '700' }}>근태 자료는 인사고과·연봉협상의 기초자료</Text>로 사용됩니다.</Step>
+                <Step>정시 출근·성실 근무는 <Text style={{ fontWeight: '700' }}>불이익이 없고</Text>, 열심히 한 분(초과근무 등)은 점수로 <Text style={{ fontWeight: '700' }}>더 챙겨드립니다</Text>.</Step>
+              </Section>
+            </Card>
+
             <Card>
               <Section emoji="🕒" title="출근 · 퇴근 (오늘 탭)">
                 <Step>회사 근무지 <Text style={{ fontWeight: '700' }}>반경 안</Text>에서 <Text style={{ fontWeight: '700' }}>출근</Text> 버튼을 누르면 위치와 함께 출근이 기록됩니다.</Step>
@@ -70,10 +77,13 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
             </Card>
 
             <Card>
-              <Section emoji="🚸" title="자리비움 안내">
-                <Step><Text style={{ fontWeight: '700' }}>20분 이상 통보 없이 임의로</Text> 자리를 비우면 자리비움으로 기록될 수 있으며, 근태 점수에 반영됩니다.</Step>
-                <Step>잠깐 자리를 비울 땐 외출 기능을 쓰거나 미리 알려주세요.</Step>
-                <Step>본인 자리비움 <Text style={{ fontWeight: '700' }}>횟수·시간</Text>은 이력 탭 월 요약에서 확인할 수 있습니다.</Step>
+              <Section emoji="🚸" title="무단이탈 안내">
+                <Step><Text style={{ fontWeight: '700' }}>20분 이상 통보 없이 임의로</Text> 자리를 비우면 무단이탈로 기록될 수 있습니다.</Step>
+                <Step>가끔 개인 사정으로 <Text style={{ fontWeight: '700' }}>일시적으로 발생</Text>하는 것은 이해하며, 점수에 큰 불이익은 없습니다.</Step>
+                <Step>다만 <Text style={{ fontWeight: '700' }}>정기적·자주</Text> 발생하면 종합 근태점수에서 불이익이 커질 수 있습니다.</Step>
+                <Step><Text style={{ fontWeight: '700' }}>관리자에게 미리 말하고</Text> 자리를 비우면 무단이탈로 잡히지 않습니다(패널티 없음).</Step>
+                <Step>개인 휴식은 <Text style={{ fontWeight: '700' }}>점심 휴게 1시간</Text>({wp.breakStart}–{wp.breakEnd})을 최대한 활용해 주세요.</Step>
+                <Step>본인 무단이탈 <Text style={{ fontWeight: '700' }}>횟수·시간</Text>은 이력 탭 월 요약에서 확인할 수 있습니다.</Step>
               </Section>
             </Card>
 

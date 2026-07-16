@@ -103,12 +103,12 @@ export function AdminDayEditor({
     const sMin = parseHM(aStart);
     const eMin = parseHM(aEnd);
     if (sMin == null || eMin == null) {
-      setMsg('자리비움 시각 형식은 HH:MM 입니다.');
+      setMsg('무단이탈 시각 형식은 HH:MM 입니다.');
       return;
     }
     const minutes = eMin - sMin;
     if (minutes <= 0) {
-      setMsg('자리비움 종료가 시작보다 늦어야 합니다.');
+      setMsg('무단이탈 종료가 시작보다 늦어야 합니다.');
       return;
     }
     setBusy(true);
@@ -116,7 +116,7 @@ export function AdminDayEditor({
     setBusy(false);
     setAStart('');
     setAEnd('');
-    setMsg('✓ 자리비움이 기록되었습니다.');
+    setMsg('✓ 무단이탈이 기록되었습니다.');
   }
   async function delAway(id: string) {
     setBusy(true);
@@ -188,9 +188,9 @@ export function AdminDayEditor({
               </Row>
 
               <Divider />
-              <Text style={{ fontWeight: '700', color: t.text }}>자리비움 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(점수 감점)</Text></Text>
+              <Text style={{ fontWeight: '700', color: t.text }}>무단이탈 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(점수 감점)</Text></Text>
               {dayAways.length === 0 ? (
-                <Muted size={12}>기록된 자리비움이 없습니다.</Muted>
+                <Muted size={12}>기록된 무단이탈이 없습니다.</Muted>
               ) : (
                 dayAways.map((a) => (
                   <Row key={a.id} style={{ justifyContent: 'space-between', alignItems: 'center' }}>

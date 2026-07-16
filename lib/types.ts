@@ -166,7 +166,7 @@ export interface MealAllowance {
   createdAt?: string;
 }
 
-// 관리자가 기록하는 자리비움(무단 이석) — 근태 점수 감점
+// 관리자가 기록하는 무단이탈(무단 이석) — 근태 점수 감점
 export interface AwayLog {
   id: string;
   userId: string;

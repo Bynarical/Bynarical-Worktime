@@ -110,7 +110,7 @@ interface StoreValue {
   adminSyncHolidays: (fromYear: number, toYear: number) => Promise<{ ok: boolean; count?: number; error?: string }>;
   setMeal: (date: string, amount: number, note?: string) => Promise<void>;
   removeMeal: (id: string) => Promise<void>;
-  // 관리자: 자리비움 기록 추가/삭제
+  // 관리자: 무단이탈 기록 추가/삭제
   adminAddAway: (userId: string, a: { date: string; startTime?: string; endTime?: string; minutes: number; note?: string }) => Promise<void>;
   adminDeleteAway: (id: string) => Promise<void>;
   recordConsent: () => Promise<{ ok: boolean; error?: string }>;
@@ -664,7 +664,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase) await api.deleteMeal(id).catch((e) => console.warn('meal del', e));
   };
 
-  // 관리자: 자리비움 기록 추가/삭제
+  // 관리자: 무단이탈 기록 추가/삭제
   const adminAddAway: StoreValue['adminAddAway'] = async (targetUserId, a) => {
     const rec: AwayLog = {
       id: uid('away'),
