@@ -1,46 +1,57 @@
-// 연간 근태 점수 — 감점(이상)+가점(초과근무)식. 연봉 협상 참고용 수치화.
-// "정상 출근·정시 근무 = 100(불이익 없음), 열심히(초과근무) = 100 초과, 이상 = 감점".
-// 연차·유급휴가는 정상으로 간주(감점 없음). 진행 중인 당일은 판정에서 제외.
-import { AttendanceRecord, LeaveRequest, WorkPolicy } from './types';
-import { addDaysKey, weekday, dateKeyToMs } from './time';
+// 연간 근태 점수 — 감점(이상)+가점(초과근무) · analog(분 단위 비례) 방식.
+// "정시·성실 근무 = 100(불이익 없음), 초과근무 = 100 초과, 이상/자리비움 = 시간에 비례 감점".
+// 지각·부족·조기퇴근·자리비움은 '얼마나'(분)를 반영해 비례 감점. 결근/코어위반/퇴근미기록은 건당.
+// 연차·유급휴가는 정상으로 간주. 진행 중인 당일은 판정 제외.
+// 집계 창은 실제 추적 시작(연초·입사일·첫 기록/연차일 중 가장 늦은 날)부터 → 도입 전 거짓 결근 방지.
+import { AttendanceRecord, LeaveRequest, AwayLog, WorkPolicy } from './types';
+import { addDaysKey, weekday, dateKeyToMs, hmToMinutes } from './time';
 import { computeDay, isNormalWorkday } from './attendance';
 
 export const SCORE_WEIGHTS = {
-  absent: 5, // 무단결근 /일
-  shortfall: 3, // 근로부족 /일
-  coreViolation: 3, // 코어타임 미충족 /회
-  late: 2, // 지각 /회
-  earlyLeave: 2, // 조기퇴근 /회
-  missing: 1, // 퇴근 미기록 /회
-  overtimePerPoint: 480, // 초과근무 이만큼(분)당 +1점 (8시간=+1)
+  // 시간 비례 감점(시간당 점수) — analog
+  latePerHour: 3, // 지각(늦은 시간)
+  shortfallPerHour: 3, // 근로부족(부족한 시간)
+  earlyLeavePerHour: 2.5, // 조기퇴근(일찍 간 시간)
+  awayPerHour: 3, // 자리비움(관리자 기록)
+  overtimePerHour: 0.1, // 초과근무 가점(시간당) = 10시간당 +1
   overtimeCap: 15, // 초과근무 가점 상한
+  // 건당 감점(이벤트성)
+  absentPerDay: 5, // 무단결근 /일
+  coreViolation: 3, // 코어타임 미충족 /회
+  missing: 1, // 퇴근 미기록 /회
 };
 
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
 
 export interface AttendanceScore {
   year: number;
-  score: number; // 최종(0~115 클램프)
-  rawScore: number; // 클램프 전
+  score: number; // 최종 점수(정수, 0~115). 100=정시·성실, 100 초과=초과근무 가점
+  rawScore: number; // 반올림 전
   grade: Grade;
-  scheduledDays: number; // 소정근로일
-  workedDays: number; // 실제 근무한 날(기록 있음)
-  normalDays: number; // 정상근무일
-  leaveDays: number; // 종일 휴가일(연차/유급)
-  absentDays: number; // 무단결근(소정일인데 기록·연차 없음)
+  scheduledDays: number;
+  workedDays: number;
+  normalDays: number;
+  leaveDays: number;
+  absentDays: number;
   lateCount: number;
+  lateMinutes: number;
   coreViolationCount: number;
   earlyLeaveCount: number;
+  earlyLeaveMinutes: number;
   shortfallDays: number;
+  shortfallMinutes: number;
   missingCount: number;
+  awayCount: number;
+  awayMinutes: number;
   overtimeMinutes: number;
-  overtimeBonus: number;
-  deductionTotal: number;
-  ratePct: number | null; // 출근율
+  overtimeBonus: number; // 가점(점수)
+  deductionTotal: number; // 감점(점수)
+  ratePct: number | null;
 }
 
+// 100점은 A. 100 초과(초과근무 가점)면 S.
 export function gradeOf(score: number): Grade {
-  if (score >= 100) return 'S';
+  if (score > 100) return 'S';
   if (score >= 90) return 'A';
   if (score >= 80) return 'B';
   if (score >= 70) return 'C';
@@ -55,9 +66,11 @@ export function computeAttendanceScore(
   workPolicy: WorkPolicy,
   holidays: Set<string>,
   today: string,
-  hireDate?: string
+  hireDate?: string,
+  awayLogs: AwayLog[] = []
 ): AttendanceScore {
   const workdaySet = new Set(workPolicy.workdays);
+  const latestClockIn = hmToMinutes(workPolicy.latestClockIn);
   const yearStart = `${year}-01-01`;
   const yearEndExcl = `${year + 1}-01-01`;
   const tomorrow = addDaysKey(today, 1);
@@ -74,8 +87,7 @@ export function computeAttendanceScore(
       leavesByDate.set(l.date, a);
     });
 
-  // 집계 시작 = 실제 추적이 시작된 시점. 앱 도입/입사 전 기간을 무단결근으로 잡지 않기 위해
-  // (연초, 입사일, 첫 기록/연차일) 중 가장 늦은 날부터. 데이터가 전혀 없으면 집계 안 함.
+  // 집계 시작 = 실제 추적 시작 시점
   const activityDates = [
     ...records.filter((r) => r.userId === userId).map((r) => r.date),
     ...leaves.filter((l) => l.userId === userId && l.status === 'APPROVED').map((l) => l.date),
@@ -92,9 +104,12 @@ export function computeAttendanceScore(
   let leaveDays = 0;
   let absentDays = 0;
   let lateCount = 0;
+  let lateMinutes = 0;
   let coreViolationCount = 0;
   let earlyLeaveCount = 0;
+  let earlyLeaveMinutes = 0;
   let shortfallDays = 0;
+  let shortfallMinutes = 0;
   let missingCount = 0;
   let overtimeMinutes = 0;
   let attended = 0;
@@ -106,7 +121,7 @@ export function computeAttendanceScore(
     const cur = d;
     d = addDaysKey(d, 1);
     const wd = weekday(dateKeyToMs(cur));
-    if (!workdaySet.has(wd) || holidays.has(cur)) continue; // 소정근로일만
+    if (!workdaySet.has(wd) || holidays.has(cur)) continue;
     scheduledDays += 1;
 
     const rec = recByDate.get(cur);
@@ -116,33 +131,48 @@ export function computeAttendanceScore(
     const comp = computeDay(rec, dayLeaves, workPolicy, { dateStr: cur, todayStr: today });
     if (comp.isFullLeave) {
       leaveDays += 1;
-      continue; // 종일 휴가 = 정상, 감점/가점 없음
+      continue;
     }
     if (!rec?.checkIn) {
-      if (cur < today && dayLeaves.length === 0) absentDays += 1; // 무단결근(당일 진행 중은 제외)
+      if (cur < today && dayLeaves.length === 0) absentDays += 1;
       continue;
     }
     workedDays += 1;
-    if (comp.flags.late) lateCount += 1;
+    if (comp.flags.late) {
+      lateCount += 1;
+      lateMinutes += Math.max(0, comp.effectiveStartMin - latestClockIn);
+    }
     if (comp.flags.coreViolation) coreViolationCount += 1;
-    if (comp.flags.earlyLeave) earlyLeaveCount += 1;
-    if (comp.flags.insufficient) shortfallDays += 1;
+    if (comp.flags.earlyLeave) {
+      earlyLeaveCount += 1;
+      if (comp.checkOutMin != null) earlyLeaveMinutes += Math.max(0, comp.expectedOutMin - comp.checkOutMin);
+    }
+    if (comp.flags.insufficient) {
+      shortfallDays += 1;
+      shortfallMinutes += Math.max(0, comp.requiredMinutes - comp.workedMinutes);
+    }
     if (comp.flags.missingClockOut) missingCount += 1;
     if (comp.flags.overtime) overtimeMinutes += Math.max(0, comp.workedMinutes - comp.requiredMinutes);
     if (isNormalWorkday(comp)) normalDays += 1;
   }
 
+  // 자리비움 — 집계 창 내 날짜만 합산
+  const myAway = awayLogs.filter((a) => a.userId === userId && a.date >= start && a.date < endExcl);
+  const awayCount = myAway.length;
+  const awayMinutes = myAway.reduce((s, a) => s + (a.minutes || 0), 0);
+
   const w = SCORE_WEIGHTS;
-  const deductionTotal =
-    absentDays * w.absent +
-    shortfallDays * w.shortfall +
-    coreViolationCount * w.coreViolation +
-    lateCount * w.late +
-    earlyLeaveCount * w.earlyLeave +
-    missingCount * w.missing;
-  const overtimeBonus = Math.min(w.overtimeCap, Math.floor(overtimeMinutes / w.overtimePerPoint));
+  const analogDeduction =
+    (lateMinutes * w.latePerHour +
+      shortfallMinutes * w.shortfallPerHour +
+      earlyLeaveMinutes * w.earlyLeavePerHour +
+      awayMinutes * w.awayPerHour) /
+    60;
+  const eventDeduction = absentDays * w.absentPerDay + coreViolationCount * w.coreViolation + missingCount * w.missing;
+  const deductionTotal = analogDeduction + eventDeduction;
+  const overtimeBonus = Math.min(w.overtimeCap, (overtimeMinutes / 60) * w.overtimePerHour);
   const rawScore = 100 - deductionTotal + overtimeBonus;
-  const score = Math.max(0, Math.min(100 + w.overtimeCap, rawScore));
+  const score = Math.round(Math.max(0, Math.min(100 + w.overtimeCap, rawScore)));
 
   return {
     year,
@@ -155,10 +185,15 @@ export function computeAttendanceScore(
     leaveDays,
     absentDays,
     lateCount,
+    lateMinutes,
     coreViolationCount,
     earlyLeaveCount,
+    earlyLeaveMinutes,
     shortfallDays,
+    shortfallMinutes,
     missingCount,
+    awayCount,
+    awayMinutes,
     overtimeMinutes,
     overtimeBonus,
     deductionTotal,

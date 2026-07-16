@@ -5,7 +5,7 @@ import { useTheme } from '@/lib/theme';
 import { computeDay, DayComputation, isNormalWorkday } from '@/lib/attendance';
 import { dateKey, minutesOfDay, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
-import { AttendanceRecord, LeaveRequest, WorkPolicy, Holiday } from '@/lib/types';
+import { AttendanceRecord, LeaveRequest, WorkPolicy, Holiday, AwayLog } from '@/lib/types';
 
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -18,6 +18,7 @@ interface DayCell {
   hasData: boolean;
   isFuture: boolean;
   holidayName?: string;
+  awayMin: number; // 자리비움(분)
 }
 
 function isAnomaly(c: DayComputation) {
@@ -30,6 +31,7 @@ export function AttendanceCalendar({
   leaves,
   policy,
   holidays = [],
+  awayLogs = [],
   onEditDay,
 }: {
   userId: string;
@@ -37,6 +39,7 @@ export function AttendanceCalendar({
   leaves: LeaveRequest[];
   policy: WorkPolicy;
   holidays?: Holiday[];
+  awayLogs?: AwayLog[];
   onEditDay?: (date: string) => void;
 }) {
   const t = useTheme();
@@ -59,6 +62,11 @@ export function AttendanceCalendar({
     holidays.forEach((h) => m.set(h.day, h.name));
     return m;
   }, [holidays]);
+  const awayByDate = useMemo(() => {
+    const m = new Map<string, number>();
+    awayLogs.filter((a) => a.userId === userId).forEach((a) => m.set(a.date, (m.get(a.date) || 0) + (a.minutes || 0)));
+    return m;
+  }, [awayLogs, userId]);
 
   const myRecords = useMemo(
     () => records.filter((r) => r.userId === userId && r.date.startsWith(monthPrefix)),
@@ -85,12 +93,13 @@ export function AttendanceCalendar({
         rec,
         comp,
         hasData: !!rec || dayLeaves.length > 0,
+        awayMin: awayByDate.get(date) || 0,
         isFuture: date > today,
         holidayName: holidayMap.get(date),
       });
     }
     return out;
-  }, [y, m, monthPrefix, myRecords, myLeaves, policy, today, nowMin, holidayMap]);
+  }, [y, m, monthPrefix, myRecords, myLeaves, policy, today, nowMin, holidayMap, awayByDate]);
 
   const leadBlanks = cells.length > 0 ? cells[0].weekday : 0;
   const grid: (DayCell | null)[] = [...Array(leadBlanks).fill(null), ...cells];
@@ -181,6 +190,7 @@ export function AttendanceCalendar({
                   {anomaly && <Dot color={t.danger} />}
                   {c.comp.isFullLeave && <Dot color={leaveColor} />}
                   {partialLeave && <Dot color={leaveColor} />}
+                  {c.awayMin > 0 && <Dot color={t.warning} />}
                 </Row>
               </View>
             </Pressable>
@@ -194,6 +204,7 @@ export function AttendanceCalendar({
         <Legend color={t.danger} label="지각·부족·이상" />
         <Legend color={t.trip} label="연차" />
         <Legend color={t.success} label="유급휴가" />
+        <Legend color={t.warning} label="자리비움" />
         <Legend color={t.danger} label="공휴일·휴무일" soft={t.dangerSoft} />
       </Row>
 
@@ -260,6 +271,7 @@ function DayDetail({ cell, onEdit }: { cell: DayCell; onEdit?: (date: string) =>
           ))}
         </Row>
       )}
+      {cell.awayMin > 0 ? <Muted size={11} style={{ color: t.warning }}>🚸 자리비움 {cell.awayMin}분</Muted> : null}
       {rec?.hash ? <Muted size={11}>해시 {shortHash(rec.hash)}</Muted> : null}
       {onEdit ? (
         <Button label="✏️ 근태 수정" variant="outline" small onPress={() => onEdit(date)} />

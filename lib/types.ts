@@ -165,3 +165,17 @@ export interface MealAllowance {
   note?: string; // 가맹점/메뉴 등
   createdAt?: string;
 }
+
+// 관리자가 기록하는 자리비움(무단 이석) — 근태 점수 감점
+export interface AwayLog {
+  id: string;
+  userId: string;
+  userName?: string;
+  date: string; // YYYY-MM-DD
+  startTime?: string; // 'HH:MM'
+  endTime?: string; // 'HH:MM'
+  minutes: number; // 자리 비운 시간(분)
+  note?: string;
+  createdBy?: string;
+  createdAt?: string;
+}

@@ -78,8 +78,11 @@ export default function Approvals() {
   // 선택 직원 연간 근태 점수(올해)
   const curYear = parseInt(dateKey().slice(0, 4), 10);
   const yearScore = useMemo(
-    () => (viewId ? computeAttendanceScore(viewId, curYear, s.records, s.leaves, policy, s.holidaySet, dateKey(), s.profilesById[viewId]?.hireDate) : null),
-    [viewId, curYear, s.records, s.leaves, policy, s.holidaySet, s.profilesById]
+    () =>
+      viewId
+        ? computeAttendanceScore(viewId, curYear, s.records, s.leaves, policy, s.holidaySet, dateKey(), s.profilesById[viewId]?.hireDate, s.awayLogs)
+        : null,
+    [viewId, curYear, s.records, s.leaves, policy, s.holidaySet, s.profilesById, s.awayLogs]
   );
 
   function onExport() {
@@ -221,7 +224,7 @@ export default function Approvals() {
           </Row>
 
           {dayView === 'calendar' ? (
-            <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} onEditDay={setEditDate} />
+            <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} awayLogs={s.awayLogs} onEditDay={setEditDate} />
           ) : (
             <>
               {dayRows.length === 0 && <Card><Muted>이 달의 기록이 없습니다</Muted></Card>}

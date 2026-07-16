@@ -13,6 +13,7 @@ import {
   Workplace,
   Holiday,
   MealAllowance,
+  AwayLog,
   LocationConsent,
 } from './types';
 
@@ -278,6 +279,44 @@ export async function upsertMeal(m: MealAllowance, userId: string) {
 }
 export async function deleteMeal(id: string) {
   const { error } = await sb().from('meal_allowances').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ---------- 자리비움(관리자 기록) ----------
+export async function fetchAwayLogs(): Promise<AwayLog[]> {
+  const { data } = await sb().from('away_logs').select('*').order('date', { ascending: false });
+  return (data || []).map((a: any) => ({
+    id: a.id,
+    userId: a.user_id,
+    date: a.date,
+    startTime: a.start_time || undefined,
+    endTime: a.end_time || undefined,
+    minutes: Number(a.minutes) || 0,
+    note: a.note || undefined,
+    createdBy: a.created_by || undefined,
+    createdAt: a.created_at || undefined,
+  }));
+}
+export async function upsertAwayLog(a: AwayLog, userId: string) {
+  const { error } = await sb()
+    .from('away_logs')
+    .upsert(
+      {
+        id: a.id,
+        user_id: userId,
+        date: a.date,
+        start_time: a.startTime ?? null,
+        end_time: a.endTime ?? null,
+        minutes: a.minutes,
+        note: a.note ?? null,
+        created_by: a.createdBy ?? null,
+      },
+      { onConflict: 'id' }
+    );
+  if (error) throw error;
+}
+export async function deleteAwayLog(id: string) {
+  const { error } = await sb().from('away_logs').delete().eq('id', id);
   if (error) throw error;
 }
 

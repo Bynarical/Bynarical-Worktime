@@ -24,6 +24,7 @@ export const STORAGE_KEYS = {
   HOLIDAYS_SYNCED: 'att_holidays_synced_at',
   MEALS: 'att_meals',
   CONSENTS: 'att_consents',
+  AWAY: 'att_away',
 } as const;
 
 // 저녁식대 1일 한도(원)

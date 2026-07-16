@@ -90,10 +90,10 @@ export default function AdminDashboard() {
       .map((e) => ({
         id: e.id,
         name: e.name,
-        score: computeAttendanceScore(e.id, scoreYear, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, today, e.hireDate),
+        score: computeAttendanceScore(e.id, scoreYear, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, today, e.hireDate, s.awayLogs),
       }))
       .sort((a, b) => b.score.score - a.score.score || a.name.localeCompare(b.name, 'ko'));
-  }, [s.profilesById, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, scoreYear, today, s.user]);
+  }, [s.profilesById, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, scoreYear, today, s.user, s.awayLogs]);
   const selScore = scores.find((x) => x.id === scoreSel);
 
   function toggle(id: string) {

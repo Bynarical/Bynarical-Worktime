@@ -18,6 +18,16 @@ function hmToIso(date: string, hm: string): string | null | undefined {
   return new Date(`${date}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+09:00`).toISOString();
 }
 
+// 'HH:MM' → 자정 기준 분. 형식 오류면 null.
+function parseHM(hm: string): number | null {
+  const m = hm.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (hh > 23 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
 const SEG_LABEL: Record<string, string> = { FULL: '종일', AM: '오전', PM: '오후', CUSTOM: '지정' };
 
 export function AdminDayEditor({
@@ -38,10 +48,13 @@ export function AdminDayEditor({
 
   const rec = s.records.find((r) => r.userId === userId && r.date === date);
   const dayLeaves = s.leaves.filter((l) => l.userId === userId && l.date === date && l.status === 'APPROVED');
+  const dayAways = s.awayLogs.filter((a) => a.userId === userId && a.date === date);
 
   const [cin, setCin] = useState(rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '');
   const [cout, setCout] = useState(rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '');
   const [type, setType] = useState<AttendanceType>(rec?.type ?? 'WORK');
+  const [aStart, setAStart] = useState('');
+  const [aEnd, setAEnd] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -82,6 +95,32 @@ export function AdminDayEditor({
   async function delLeave(id: string) {
     setBusy(true);
     await s.adminDeleteLeave(id);
+    setBusy(false);
+  }
+
+  async function addAway() {
+    setMsg('');
+    const sMin = parseHM(aStart);
+    const eMin = parseHM(aEnd);
+    if (sMin == null || eMin == null) {
+      setMsg('자리비움 시각 형식은 HH:MM 입니다.');
+      return;
+    }
+    const minutes = eMin - sMin;
+    if (minutes <= 0) {
+      setMsg('자리비움 종료가 시작보다 늦어야 합니다.');
+      return;
+    }
+    setBusy(true);
+    await s.adminAddAway(userId, { date, startTime: aStart.trim(), endTime: aEnd.trim(), minutes });
+    setBusy(false);
+    setAStart('');
+    setAEnd('');
+    setMsg('✓ 자리비움이 기록되었습니다.');
+  }
+  async function delAway(id: string) {
+    setBusy(true);
+    await s.adminDeleteAway(id);
     setBusy(false);
   }
 
@@ -146,6 +185,29 @@ export function AdminDayEditor({
                 <Chip label="오후 4h" color={t.trip} onPress={() => addLeave('PM', 4)} small />
                 <Chip label="오전 2h" color={t.trip} onPress={() => addLeave('AM', 2)} small />
                 <Chip label="오후 2h" color={t.trip} onPress={() => addLeave('PM', 2)} small />
+              </Row>
+
+              <Divider />
+              <Text style={{ fontWeight: '700', color: t.text }}>자리비움 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(점수 감점)</Text></Text>
+              {dayAways.length === 0 ? (
+                <Muted size={12}>기록된 자리비움이 없습니다.</Muted>
+              ) : (
+                dayAways.map((a) => (
+                  <Row key={a.id} style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Badge text={`${a.startTime && a.endTime ? `${a.startTime}~${a.endTime} · ` : ''}${a.minutes}분`} color={t.danger} />
+                    <Button label="삭제" variant="neutral" small onPress={() => delAway(a.id)} />
+                  </Row>
+                ))
+              )}
+              <Muted size={11}>자리 비운 시간대를 입력하세요(HH:MM). 무단 이석은 점수에서 시간에 비례해 감점됩니다.</Muted>
+              <Row style={{ alignItems: 'flex-end' }}>
+                <View style={{ flex: 1 }}>
+                  <Field label="시작" value={aStart} onChangeText={setAStart} placeholder="14:00" autoCapitalize="none" keyboardType="numbers-and-punctuation" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field label="종료" value={aEnd} onChangeText={setAEnd} placeholder="14:40" autoCapitalize="none" keyboardType="numbers-and-punctuation" />
+                </View>
+                <Button label="추가" variant="danger" small onPress={addAway} />
               </Row>
 
               <Divider />

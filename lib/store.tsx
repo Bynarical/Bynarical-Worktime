@@ -19,6 +19,7 @@ import {
   LeavePolicy,
   Holiday,
   MealAllowance,
+  AwayLog,
   LocationConsent,
 } from './types';
 import { chainHash } from './hash';
@@ -65,6 +66,7 @@ interface StoreValue {
   holidays: Holiday[];
   holidaySet: Set<string>;
   meals: MealAllowance[];
+  awayLogs: AwayLog[];
   consents: LocationConsent[];
   adminUnlocked: boolean;
 
@@ -108,6 +110,9 @@ interface StoreValue {
   adminSyncHolidays: (fromYear: number, toYear: number) => Promise<{ ok: boolean; count?: number; error?: string }>;
   setMeal: (date: string, amount: number, note?: string) => Promise<void>;
   removeMeal: (id: string) => Promise<void>;
+  // 관리자: 자리비움 기록 추가/삭제
+  adminAddAway: (userId: string, a: { date: string; startTime?: string; endTime?: string; minutes: number; note?: string }) => Promise<void>;
+  adminDeleteAway: (id: string) => Promise<void>;
   recordConsent: () => Promise<{ ok: boolean; error?: string }>;
   updateWorkPolicy: (patch: Partial<WorkPolicy>) => Promise<void>;
   updateLeavePolicy: (patch: Partial<LeavePolicy>) => Promise<void>;
@@ -133,6 +138,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>>({});
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [meals, setMeals] = useState<MealAllowance[]>([]);
+  const [awayLogs, setAwayLogs] = useState<AwayLog[]>([]);
   const [consents, setConsents] = useState<LocationConsent[]>([]);
   // 초기 비밀번호에서 한 번이라도 변경했는지 (auth user_metadata.password_changed)
   const [passwordChanged, setPasswordChanged] = useState(true);
@@ -162,6 +168,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (cConf) setConfirmations(cConf);
       if (cSet) setSettings({ ...DEFAULT_SETTINGS, ...cSet });
       if (cAdj) setAdjustments(cAdj);
+      const cAway = await getItem<AwayLog[]>(STORAGE_KEYS.AWAY);
+      if (cAway) setAwayLogs(cAway);
 
       if (!supabase) {
         setReady(true);
@@ -188,6 +196,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           setConfirmations([]);
           setAdjustments([]);
           setMeals([]);
+          setAwayLogs([]);
           setConsents([]);
         }
       });
@@ -196,7 +205,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function loadAll(userId: string) {
-    const [me, pmap, recs, lvs, confs, wps, pol, adjs, hols, mealsData, consentsData] = await Promise.all([
+    const [me, pmap, recs, lvs, confs, wps, pol, adjs, hols, mealsData, consentsData, awayData] = await Promise.all([
       api.fetchProfile(userId),
       api.fetchProfilesMap(),
       api.fetchRecords(),
@@ -208,10 +217,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       api.fetchHolidays().catch(() => [] as Holiday[]),
       api.fetchMeals().catch(() => [] as MealAllowance[]),
       api.fetchConsents().catch(() => [] as LocationConsent[]),
+      api.fetchAwayLogs().catch(() => [] as AwayLog[]),
     ]);
     const recs2 = recs.map((r) => ({ ...r, userName: pmap[r.userId]?.name, empNo: pmap[r.userId]?.empNo }));
     const lvs2 = lvs.map((l) => ({ ...l, userName: pmap[l.userId]?.name, empNo: pmap[l.userId]?.empNo }));
     const meals2 = mealsData.map((m) => ({ ...m, userName: pmap[m.userId]?.name }));
+    const away2 = awayData.map((a) => ({ ...a, userName: pmap[a.userId]?.name }));
     const nextSettings: Settings = { workplaces: wps, workPolicy: pol.workPolicy, leavePolicy: pol.leavePolicy };
     setUser(me);
     setProfilesById(pmap);
@@ -222,11 +233,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setAdjustments(adjs);
     setHolidays(hols);
     setMeals(meals2);
+    setAwayLogs(away2);
     setConsents(consentsData);
     // 캐시
     if (me) await setItem(STORAGE_KEYS.USER, me);
     await setItem(STORAGE_KEYS.CONSENTS, consentsData);
     await setItem(STORAGE_KEYS.MEALS, meals2);
+    await setItem(STORAGE_KEYS.AWAY, away2);
     await setItem(STORAGE_KEYS.HOLIDAYS, hols);
     await setItem(STORAGE_KEYS.RECORDS, recs2);
     await setItem(STORAGE_KEYS.LEAVES, lvs2);
@@ -651,6 +664,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase) await api.deleteMeal(id).catch((e) => console.warn('meal del', e));
   };
 
+  // 관리자: 자리비움 기록 추가/삭제
+  const adminAddAway: StoreValue['adminAddAway'] = async (targetUserId, a) => {
+    const rec: AwayLog = {
+      id: uid('away'),
+      userId: targetUserId,
+      userName: profilesById[targetUserId]?.name,
+      date: a.date,
+      startTime: a.startTime,
+      endTime: a.endTime,
+      minutes: Math.max(0, Math.round(a.minutes) || 0),
+      note: a.note,
+      createdBy: user?.name,
+      createdAt: new Date().toISOString(),
+    };
+    setAwayLogs((prev) => {
+      const next = [...prev, rec];
+      setItem(STORAGE_KEYS.AWAY, next);
+      return next;
+    });
+    if (supabase) await api.upsertAwayLog(rec, targetUserId).catch((e) => console.warn('away add', e));
+  };
+  const adminDeleteAway: StoreValue['adminDeleteAway'] = async (id) => {
+    setAwayLogs((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      setItem(STORAGE_KEYS.AWAY, next);
+      return next;
+    });
+    if (supabase) await api.deleteAwayLog(id).catch((e) => console.warn('away del', e));
+  };
+
   // 위치정보 수집·이용 동의 기록 (IP는 Edge Function이 서버에서 캡처)
   const recordConsent = async () => {
     if (!supabase || !user) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
@@ -710,6 +753,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       holidays,
       holidaySet: new Set(holidays.map((h) => h.day)),
       meals,
+      awayLogs,
       consents,
       adminUnlocked: !!user?.isAdmin,
       login,
@@ -745,12 +789,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       adminSyncHolidays,
       setMeal,
       removeMeal,
+      adminAddAway,
+      adminDeleteAway,
       recordConsent,
       updateWorkPolicy,
       updateLeavePolicy,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, consents, passwordChanged]
+    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, awayLogs, consents, passwordChanged]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
