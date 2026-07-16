@@ -176,7 +176,7 @@ export default function Today() {
               onPress={() => setShowHelp(true)}
               style={{ backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 }}
             >
-              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>📖 사용법</Text>
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>📋 근태 안내</Text>
             </Pressable>
             <Badge
               text={state === 'working' ? '근무 중' : state === 'done' ? '근무 완료' : comp.isFullLeave ? '연차' : '출근 전'}

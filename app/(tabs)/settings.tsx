@@ -38,7 +38,7 @@ export default function Settings() {
           {s.user?.isAdmin && <Badge text="관리자 계정" color="#fff" soft="rgba(255,255,255,0.2)" />}
         </Row>
       </Hero>
-      <Button label="📖 앱 사용법 보기" variant="outline" onPress={() => setShowHelp(true)} />
+      <Button label="📋 근태 관련 안내사항" variant="outline" onPress={() => setShowHelp(true)} />
       <ProfileCard />
       <WorkplacesCard />
       <AdminCard />

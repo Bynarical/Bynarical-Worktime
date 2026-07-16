@@ -36,20 +36,31 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
         <View style={{ maxHeight: '92%', backgroundColor: t.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' }}>
           <Row style={{ justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingBottom: 8 }}>
-            <Body style={{ fontWeight: '800', fontSize: 18 }}>📖 앱 사용법</Body>
+            <Body style={{ fontWeight: '800', fontSize: 18 }}>📋 근태 관련 안내사항</Body>
             <Pressable onPress={onClose} hitSlop={12}>
               <Text style={{ fontSize: 22, color: t.textDim }}>✕</Text>
             </Pressable>
           </Row>
           <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 4, gap: 8 }} showsVerticalScrollIndicator={false}>
             <Muted size={13}>
-              처음이신가요? 아래 순서대로 보시면 금방 익숙해집니다. 대부분 화면의 큰 버튼만 눌러도 됩니다. 🙂
+              앱 사용법과 근태 규칙을 정리했습니다. 처음이시면 순서대로 한 번 읽어보시고, 필요할 때 다시 열어보세요. 🙂
             </Muted>
 
             <Card style={{ borderColor: t.primary, borderWidth: 1 }}>
               <Section emoji="📌" title="꼭 알아두세요">
                 <Step>여기 기록되는 <Text style={{ fontWeight: '700' }}>근태 자료는 인사고과·연봉협상의 기초자료</Text>로 사용됩니다.</Step>
                 <Step>정시 출근·성실 근무는 <Text style={{ fontWeight: '700' }}>불이익이 없고</Text>, 열심히 한 분(초과근무 등)은 점수로 <Text style={{ fontWeight: '700' }}>더 챙겨드립니다</Text>.</Step>
+                <Step>지각·근로부족·조기퇴근·무단이탈 등은 관리자가 기록·관리하며 근태점수에 반영됩니다.</Step>
+              </Section>
+            </Card>
+
+            <Card>
+              <Section emoji="⏰" title="근무 규칙 (근로계약 기준)">
+                <Step><Text style={{ fontWeight: '700' }}>코어타임 {wp.coreStart}–{wp.coreEnd}</Text>은 반드시 근무해야 합니다.</Step>
+                <Step>출근은 <Text style={{ fontWeight: '700' }}>{wp.earliestClockIn}~{wp.latestClockIn}</Text> 사이, {wp.clockInStepMinutes}분 단위로 선택합니다. {wp.latestClockIn}을 넘겨 출근하면 <Text style={{ fontWeight: '700' }}>지각</Text>입니다.</Step>
+                <Step>하루 소정근로는 <Text style={{ fontWeight: '700' }}>{wp.dailyWorkMinutes / 60}시간</Text>, 휴게 <Text style={{ fontWeight: '700' }}>{wp.breakStart}–{wp.breakEnd}</Text>(1시간)는 근로시간에서 제외됩니다.</Step>
+                <Step>예상 퇴근 = 출근 + 소정근로 + 휴게. 그전에 퇴근하면 <Text style={{ fontWeight: '700' }}>조기퇴근/근로부족</Text>으로 기록됩니다.</Step>
+                <Step>휴식은 점심 휴게시간을 최대한 활용해 주세요.</Step>
               </Section>
             </Card>
 
