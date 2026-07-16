@@ -13,8 +13,8 @@ export const SCORE_WEIGHTS = {
   shortfallPerHour: 3, // 근로부족(부족한 시간)
   earlyLeavePerHour: 2.5, // 조기퇴근(일찍 간 시간)
   awayPerHour: 3, // 자리비움(관리자 기록)
-  overtimePerHour: 0.1, // 초과근무 가점(시간당) = 10시간당 +1
-  overtimeCap: 15, // 초과근무 가점 상한
+  overtimePerHour: 0.25, // 초과근무 가점(시간당) = 4시간당 +1 (열심히 한 사람 우대)
+  overtimeCap: 25, // 초과근무 가점 상한
   // 건당 감점(이벤트성)
   absentPerDay: 5, // 무단결근 /일
   coreViolation: 3, // 코어타임 미충족 /회

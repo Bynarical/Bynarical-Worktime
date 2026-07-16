@@ -184,7 +184,7 @@ export default function AdminDashboard() {
               </Row>
               <Muted size={11}>
                 정상 {sc.normalDays}/{sc.scheduledDays}일 · 지각 {sc.lateCount} · 부족 {sc.shortfallDays} · 결근 {sc.absentDays}
-                {sc.overtimeBonus > 0 ? ` · 초과 +${sc.overtimeBonus}` : ''}
+                {sc.overtimeBonus > 0 ? ` · 초과 +${Math.round(sc.overtimeBonus)}` : ''}
               </Muted>
             </Pressable>
           );
