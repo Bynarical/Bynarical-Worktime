@@ -31,7 +31,7 @@ export const STORAGE_KEYS = {
 export const MEAL_DAILY_LIMIT = 20000;
 
 // 근태 안내사항 배너 노출 종료일(YYYY-MM-DD). 이 날짜까지 모든 사용자에게 안내 배너 표시.
-export const NOTICE_UNTIL = '2026-07-20';
+export const NOTICE_UNTIL = '2026-07-24';
 
 // 위치정보 수집·이용 동의
 export const CONSENT_VERSION = 'v1';
