@@ -99,10 +99,12 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
 
             <Card>
               <Section emoji="🌴" title="연차 · 휴가 신청 (연차 탭)">
+                <Step><Text style={{ fontWeight: '700' }}>연차는 눈치 보지 말고 자유롭게 사용하세요.</Text> 관리자에게 승인 요청만 하면 됩니다.</Step>
                 <Step>연차는 <Text style={{ fontWeight: '700' }}>2시간 단위</Text>(반반차 2h · 반차 4h · 종일 8h)로 신청합니다.</Step>
                 <Step>오전(늦게 출근)/오후(일찍 퇴근)/종일/직접지정 중 선택 → 날짜·시간 고르고 <Text style={{ fontWeight: '700' }}>신청</Text>.</Step>
                 <Step>예비군·경조사·공가 등은 <Text style={{ fontWeight: '700' }}>유급휴가</Text>로 신청(연차 잔여 차감 없음).</Step>
                 <Step>신청은 <Text style={{ fontWeight: '700' }}>관리자 승인</Text> 후 확정됩니다. 상단에서 잔여 연차를 확인하세요.</Step>
+                <Step><Text style={{ fontWeight: '700' }}>3일 이상 연속 장기 출타</Text>는 업무 조율을 위해 <Text style={{ fontWeight: '700' }}>1주일 전</Text>에 관리자에게 미리 알려주시길 권고합니다.</Step>
               </Section>
             </Card>
 
