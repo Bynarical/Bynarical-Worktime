@@ -105,6 +105,7 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
                 <Step>예비군·경조사·공가 등은 <Text style={{ fontWeight: '700' }}>유급휴가</Text>로 신청(연차 잔여 차감 없음).</Step>
                 <Step>신청은 <Text style={{ fontWeight: '700' }}>관리자 승인</Text> 후 확정됩니다. 상단에서 잔여 연차를 확인하세요.</Step>
                 <Step><Text style={{ fontWeight: '700' }}>3일 이상 연속 장기 출타</Text>는 업무 조율을 위해 <Text style={{ fontWeight: '700' }}>1주일 전</Text>에 관리자에게 미리 알려주시길 권고합니다.</Step>
+                <Step><Text style={{ fontWeight: '700' }}>반차(4시간) 이상</Text> 휴가는 팀 공유를 위해 <Text style={{ fontWeight: '700' }}>Outlook 캘린더</Text>에도 표시해 주세요.</Step>
               </Section>
             </Card>
 
