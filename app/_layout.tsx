@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StoreProvider, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { PasswordChangePrompt } from '@/components/PasswordChangePrompt';
+import { NoticeBanner } from '@/components/NoticeBanner';
 
 function Gate() {
   const { ready, authed, user } = useStore();
@@ -43,6 +44,7 @@ function Gate() {
     <>
       <Slot />
       <PasswordChangePrompt />
+      <NoticeBanner />
     </>
   );
 }

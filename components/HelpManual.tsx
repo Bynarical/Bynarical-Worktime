@@ -49,7 +49,7 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
             <Card style={{ borderColor: t.primary, borderWidth: 1 }}>
               <Section emoji="📌" title="꼭 알아두세요">
                 <Step>여기 기록되는 <Text style={{ fontWeight: '700' }}>근태 자료는 인사고과·연봉협상의 기초자료</Text>로 사용됩니다.</Step>
-                <Step>정시 출근·성실 근무는 <Text style={{ fontWeight: '700' }}>불이익이 없고</Text>, 열심히 한 분(초과근무 등)은 점수로 <Text style={{ fontWeight: '700' }}>더 챙겨드립니다</Text>.</Step>
+                <Step><Text style={{ fontWeight: '700' }}>코어타임 준수·시간 내 성실 근무</Text>만 해주셔도 불이익이 없고, 더 열심히 근무한 분은 점수로 <Text style={{ fontWeight: '700' }}>더 챙겨드립니다</Text>.</Step>
                 <Step>지각·근로부족·조기퇴근·무단이탈 등은 관리자가 기록·관리하며 근태점수에 반영됩니다.</Step>
               </Section>
             </Card>
@@ -83,7 +83,8 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
 
             <Card>
               <Section emoji="🍚" title="저녁식대 (야근)">
-                <Step>야근하며 저녁을 드셨으면 오늘 탭의 <Text style={{ fontWeight: '700' }}>저녁식대</Text> 스위치를 켜세요.</Step>
+                <Step>야근 시 관리자에게 별도 통보 없이 <Text style={{ fontWeight: '700' }}>법인카드 사용이 가능</Text>합니다.</Step>
+                <Step>식사 후 퇴근 체크할 때 오늘 탭의 <Text style={{ fontWeight: '700' }}>저녁식대</Text> 스위치를 켜주세요.</Step>
               </Section>
             </Card>
 
