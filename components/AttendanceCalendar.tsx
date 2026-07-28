@@ -109,12 +109,16 @@ export function AttendanceCalendar({
         <Pressable onPress={() => { setMonthOffset((v) => v - 1); setSelected(null); }} hitSlop={12}>
           <Text style={{ color: t.primary, fontSize: 22, fontWeight: '700' }}>‹</Text>
         </Pressable>
-        <View style={{ alignItems: 'center' }}>
+        <Pressable onPress={() => { setMonthOffset(0); setSelected(null); }} style={{ alignItems: 'center' }}>
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '800' }}>{monthLabel}</Text>
-          <Muted size={11}>근무 {workDays}일 · 정상 {normalDays}일{leaveDays > 0 ? ` · 연차 ${leaveDays}일` : ''}</Muted>
-        </View>
-        <Pressable onPress={() => { monthOffset < 0 && setMonthOffset((v) => v + 1); setSelected(null); }} hitSlop={12}>
-          <Text style={{ color: monthOffset >= 0 ? t.textFaint : t.primary, fontSize: 22, fontWeight: '700' }}>›</Text>
+          <Muted size={11}>
+            {monthOffset > 0
+              ? `예정 연차 ${leaveDays}일`
+              : `근무 ${workDays}일 · 정상 ${normalDays}일${leaveDays > 0 ? ` · 연차 ${leaveDays}일` : ''}`}
+          </Muted>
+        </Pressable>
+        <Pressable onPress={() => { setMonthOffset((v) => v + 1); setSelected(null); }} hitSlop={12}>
+          <Text style={{ color: t.primary, fontSize: 22, fontWeight: '700' }}>›</Text>
         </Pressable>
       </Row>
 
@@ -170,7 +174,8 @@ export function AttendanceCalendar({
                     : 'transparent',
                   borderWidth: isToday ? 1.5 : 0,
                   borderColor: isToday ? t.primary : 'transparent',
-                  opacity: c.isFuture ? 0.4 : 1,
+                  // 미래 날짜라도 승인된 연차/일정이 있으면 선명하게, 빈 미래일만 흐리게
+                  opacity: c.isFuture && !c.hasData ? 0.4 : 1,
                 }}
               >
                 <Text style={{ fontSize: 13, fontWeight: isToday ? '800' : '600', color: numColor }}>

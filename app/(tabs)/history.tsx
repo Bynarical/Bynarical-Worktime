@@ -144,12 +144,12 @@ export default function History() {
           <Pressable onPress={() => setMonthOffset((v) => v - 1)} hitSlop={12}>
             <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>‹</Text>
           </Pressable>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={{ color: t.onHeroDim, fontSize: 12, fontWeight: '600' }}>월 근무 요약</Text>
+          <Pressable onPress={() => setMonthOffset(0)} style={{ alignItems: 'center' }}>
+            <Text style={{ color: t.onHeroDim, fontSize: 12, fontWeight: '600' }}>{monthOffset > 0 ? '월 예정 요약' : '월 근무 요약'}</Text>
             <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.3 }}>{monthLabel}</Text>
-          </View>
-          <Pressable onPress={() => monthOffset < 0 && setMonthOffset((v) => v + 1)} hitSlop={12}>
-            <Text style={{ color: monthOffset >= 0 ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 22, fontWeight: '700' }}>›</Text>
+          </Pressable>
+          <Pressable onPress={() => setMonthOffset((v) => v + 1)} hitSlop={12}>
+            <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>›</Text>
           </Pressable>
         </Row>
         <Row style={{ gap: 8 }}>
@@ -216,6 +216,8 @@ export default function History() {
                 </Row>
               ) : !isSelf ? (
                 <Muted size={12}>미서명</Muted>
+              ) : ws > dateKey() ? (
+                <Badge text="🗓 예정된 휴가" color={t.trip} soft={t.tripSoft} />
               ) : signWeek === ws ? (
                 <View style={{ gap: 8 }}>
                   <Field label="서명(이름 입력)" value={sigText} onChangeText={setSigText} placeholder={s.user?.name} />
