@@ -25,7 +25,14 @@ export const STORAGE_KEYS = {
   MEALS: 'att_meals',
   CONSENTS: 'att_consents',
   AWAY: 'att_away',
+  // 지하철 통근(개인·로컬 저장)
+  HOME: 'att_home', // 집(출발지) 좌표 GeoPoint
+  SUBWAY_IDS: 'att_subway_ids', // 역명→TAGO 역ID 캐시 { [normName]: {id,route}[] }
+  SUBWAY_SCHED: 'att_subway_sched', // 시간표 캐시 접두사: `${SUBWAY_SCHED}_${stationId}_${daily}`
 } as const;
+
+// 지하철 시간표 캐시 유효기간(ms). 시간표는 개편 시에만 바뀌므로 길게 잡는다.
+export const SUBWAY_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30일
 
 // 저녁식대 1일 한도(원)
 export const MEAL_DAILY_LIMIT = 20000;

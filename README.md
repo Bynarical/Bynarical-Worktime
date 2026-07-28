@@ -30,6 +30,12 @@ Expo(React Native) 기반으로 **웹 + iOS + Android** 를 하나의 코드베�
 - 근무 정책 편집(코어타임/휴게/출근단위/소정근로), 연차 정책(기본/상한 일수)
 - 연차 승인·반려, 연차 수동 가감
 
+### 통근 (🚇 지하철)
+- **집·직장 근처 역 자동 탐색**(전국 도시철도 좌표 번들 · 오프라인 동작)
+- **시간표 조회**: 요일(평일/토/일)·방향별 **첫차/막차**, 기준 시각(지금·출근·퇴근) 이후 다가오는 열차
+- 국토교통부(TAGO) 공공데이터를 **Supabase Edge Function으로 프록시**(서비스키 비노출), 30일 캐시
+- 집(출발지)은 각자 입력하며 **기기에만 로컬 저장** — 설정·배포는 [`docs/subway-commute.md`](./docs/subway-commute.md)
+
 ### 저장/동기화
 - 오프라인 우선(localStorage/AsyncStorage), 온라인 시 **Google Apps Script + Sheets** 동기화
 - 서버 없이도 완전 동작 (백엔드 설정은 [`server/README.md`](./server/README.md))
@@ -59,13 +65,18 @@ app/                라우트 (expo-router)
   (tabs)/index      오늘(출퇴근)
   (tabs)/history    이력·집계·주간서명
   (tabs)/leave      연차 잔액·신청·승인
+  (tabs)/commute    집·직장 근처 역·지하철 시간표
   (tabs)/settings   프로필·근무지·정책·동기화
 lib/                도메인 로직
   config, types, storage, time, hash, geo, backend, store, theme, csv
   attendance.ts     코어타임·휴게·근로시간·플래그·집계
   leave.ts          연차 발생·잔액·검증(반반차)
+  subway.ts         근처 역·지하철 시간표·집 위치
+assets/subway/      전국 역 좌표 번들(stations.json)
+scripts/            build-stations.mjs (역 데이터 재생성)
 components/ui.tsx   재사용 UI
 server/Code.gs      Google Apps Script 백엔드
+supabase/functions/subway-timetable  TAGO 시간표 프록시
 ```
 
 ## 기술 스택

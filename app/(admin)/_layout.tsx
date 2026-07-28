@@ -43,6 +43,7 @@ export default function AdminLayout() {
       <Tabs.Screen name="index" options={{ title: '대시보드', tabBarIcon: ({ focused }) => <Icon emoji="📋" focused={focused} /> }} />
       <Tabs.Screen name="employees" options={{ title: '직원관리', tabBarIcon: ({ focused }) => <Icon emoji="👥" focused={focused} /> }} />
       <Tabs.Screen name="approvals" options={{ title: '승인·근태', tabBarIcon: ({ focused }) => <Icon emoji="✅" focused={focused} /> }} />
+      <Tabs.Screen name="commute" options={{ title: '통근', tabBarIcon: ({ focused }) => <Icon emoji="🚇" focused={focused} /> }} />
       <Tabs.Screen name="settings" options={{ title: '설정', tabBarIcon: ({ focused }) => <Icon emoji="⚙️" focused={focused} /> }} />
     </Tabs>
   );
