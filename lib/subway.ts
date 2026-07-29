@@ -63,19 +63,27 @@ interface CacheEnvelope<T> {
 }
 
 // 역명 → TAGO 역ID 목록 조회(캐시). 한 역이 여러 노선이면 여러 ID가 나올 수 있다.
-async function resolveStationIds(station: SubwayStation): Promise<{ id: string; name: string; route: string }[]> {
+async function resolveStationIds(
+  station: SubwayStation,
+  force = false
+): Promise<{ id: string; name: string; route: string }[]> {
   const key = normName(station.name);
   const cache = (await getItem<Record<string, { id: string; name: string; route: string }[]>>(STORAGE_KEYS.SUBWAY_IDS)) || {};
-  if (cache[key]) return cache[key];
-  if (!supabase) return [];
+  // 비어있지 않은 캐시만 사용한다. 과거 검색 실패로 빈 배열([])이 캐시된 경우 []도 truthy라
+  // 옛 코드는 영구히 빈 결과를 돌려줬다 → 길이를 확인해 무시하고 재조회한다.
+  if (!force && cache[key] && cache[key].length > 0) return cache[key];
+  if (!supabase) return cache[key] || [];
   const { data, error } = await supabase.functions.invoke('subway-timetable', { body: { action: 'search', name: station.name } });
-  if (error || !data || (data as any).ok === false) return [];
+  if (error || !data || (data as any).ok === false) return cache[key] || [];
   const stations = ((data as any).stations || []) as { id: string; name: string; route: string }[];
   // 같은 이름의 다른 도시 역이 섞일 수 있어, 도시가 있으면 이름 정확일치 우선
   const filtered = stations.filter((s) => normName(s.name || '') === key);
   const result = (filtered.length ? filtered : stations).slice(0, 6);
-  cache[key] = result;
-  await setItem(STORAGE_KEYS.SUBWAY_IDS, cache);
+  // 빈 결과는 캐시하지 않는다(일시적 실패가 영구 캐시되는 것 방지).
+  if (result.length > 0) {
+    cache[key] = result;
+    await setItem(STORAGE_KEYS.SUBWAY_IDS, cache);
+  }
   return result;
 }
 
@@ -104,7 +112,7 @@ export async function fetchTimetable(
     return { ok: false, error: '백엔드가 설정되지 않아 시간표를 가져올 수 없습니다.' };
   }
 
-  const ids = await resolveStationIds(station);
+  const ids = await resolveStationIds(station, opts.force);
   if (!ids.length) {
     if (cached) return { ok: true, trains: cached.data, cached: true, at: cached.at };
     return { ok: false, error: '해당 역의 시간표 정보를 찾을 수 없습니다. (지방 노선은 미제공일 수 있음)' };
