@@ -76,7 +76,7 @@ export default function AdminDashboard() {
   const missingHire = overviews.filter((o) => !o.hireDate).length;
   const unsignedStaff = overviews.filter((o) => o.unsignedWeeks > 0).length;
   const anomalyStaff = overviews.filter((o) => o.anomalyDays > 0).length;
-  const negativeLeave = overviews.filter((o) => o.balance && o.balance.remainingHours < 0).length;
+  const negativeLeave = overviews.filter((o) => o.balance && o.balance.availableNowHours < 0).length;
   const pendingRecCount = s.records.filter((r) => r.pending).length;
 
   const shown = onlyWarnings ? overviews.filter((o) => o.hasWarning) : overviews;
@@ -256,8 +256,8 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
         {!o.isAdmin && (
           <Metric
             label="연차 잔여"
-            value={o.balance ? hoursToDayLabel(o.balance.remainingHours) : '미산정'}
-            color={o.balance ? (o.balance.remainingHours < 0 ? t.danger : t.trip) : t.textFaint}
+            value={o.balance ? hoursToDayLabel(o.balance.availableNowHours) : '미산정'}
+            color={o.balance ? (o.balance.availableNowHours < 0 ? t.danger : t.trip) : t.textFaint}
           />
         )}
       </Row>
@@ -296,8 +296,8 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
             <>
               <Divider />
               <Text style={{ fontWeight: '700', color: t.textDim, fontSize: 13 }}>연차</Text>
-              <KV k="잔여" v={`${hoursToDayLabel(o.balance.remainingHours)} (${o.balance.remainingHours}h)`} />
-              <KV k="발생 / 사용 / 대기" v={`${o.balance.entitledHours}h / ${o.balance.usedHours}h / ${o.balance.pendingHours}h`} />
+              <KV k="잔여" v={`${hoursToDayLabel(o.balance.availableNowHours)} (${o.balance.availableNowHours}h)`} />
+              <KV k="발생 / 사용 / 예정 / 대기" v={`${o.balance.entitledHours}h / ${o.balance.usedHours}h / ${o.balance.scheduledHours}h / ${o.balance.pendingHours}h`} />
               {o.balance.adjustmentHours !== 0 && <KV k="관리자 조정" v={`${o.balance.adjustmentHours > 0 ? '+' : ''}${o.balance.adjustmentHours}h`} />}
             </>
           )}

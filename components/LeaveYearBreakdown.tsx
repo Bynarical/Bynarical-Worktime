@@ -48,6 +48,7 @@ export function LeaveYearBreakdown({
             <Row style={{ gap: 8, flexWrap: 'wrap' }}>
               <Mini k="발생" v={hoursToDayLabel(b.grantedHours, fullDay)} />
               <Mini k="사용" v={hoursToDayLabel(b.usedHours, fullDay)} />
+              {b.scheduledHours > 0 && <Mini k="예정" v={hoursToDayLabel(b.scheduledHours, fullDay)} color={t.textDim} />}
               {b.pendingHours > 0 && <Mini k="대기" v={hoursToDayLabel(b.pendingHours, fullDay)} />}
               {expired ? (
                 <Mini k="소멸" v={hoursToDayLabel(unusedExpired, fullDay)} color={unusedExpired > 0 ? t.danger : t.textFaint} />

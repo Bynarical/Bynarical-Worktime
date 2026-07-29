@@ -159,8 +159,8 @@ export default function Employees() {
                 {!e.hireDate ? (
                   <Badge text="입사일 미등록" color={t.warning} />
                 ) : (
-                  <Text style={{ fontWeight: '800', color: b && b.remainingHours < 0 ? t.danger : t.trip }}>
-                    {b ? `${hoursToDayLabel(b.remainingHours, leavePolicy.fullDayHours)} (${b.remainingHours}h)` : '-'}
+                  <Text style={{ fontWeight: '800', color: b && b.availableNowHours < 0 ? t.danger : t.trip }}>
+                    {b ? `${hoursToDayLabel(b.availableNowHours, leavePolicy.fullDayHours)} (${b.availableNowHours}h)` : '-'}
                   </Text>
                 )}
               </Row>
@@ -233,8 +233,8 @@ export default function Employees() {
               return b ? (
                 <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <Body style={{ fontWeight: '600' }}>현재 잔여 연차</Body>
-                  <Text style={{ fontWeight: '800', color: b.remainingHours < 0 ? t.danger : t.trip }}>
-                    {hoursToDayLabel(b.remainingHours, leavePolicy.fullDayHours)} ({b.remainingHours}h)
+                  <Text style={{ fontWeight: '800', color: b.availableNowHours < 0 ? t.danger : t.trip }}>
+                    {hoursToDayLabel(b.availableNowHours, leavePolicy.fullDayHours)} ({b.availableNowHours}h)
                   </Text>
                 </Row>
               ) : null;

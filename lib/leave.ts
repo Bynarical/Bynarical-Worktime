@@ -52,7 +52,8 @@ export interface LeaveYearBucket {
   expiry: string; // 소멸일(이 날부터 사용 불가, exclusive)
   lastValidDate: string; // 마지막 사용 가능일(expiry - 1일)
   grantedHours: number; // asOf 기준 발생(부여) 시간
-  usedHours: number; // 이 연차년도에 사용(승인)된 시간
+  usedHours: number; // 승인 & 이미 지난(사용한) 시간
+  scheduledHours: number; // 승인됐지만 아직 안 온(미래) 시간 — 예정(현재 잔여에서 즉시 차감 안 함)
   pendingHours: number; // 이 연차년도 대기중 시간
   remainingHours: number;
   status: 'future' | 'active' | 'expired';
@@ -72,9 +73,11 @@ export interface LeaveYearBucket {
 
 export interface LeaveBalance {
   entitledHours: number; // 현재 연차년도 발생 + 관리자 조정
-  usedHours: number; // 현재 연차년도 사용(승인)
+  usedHours: number; // 사용(승인 & 이미 지남)
+  scheduledHours: number; // 예정(승인됐으나 미래 날짜) — 실제 사용일에 차감
   pendingHours: number; // 현재 연차년도 대기
-  remainingHours: number; // 잔여(현재 연차년도 + 조정)
+  remainingHours: number; // 보수적 잔여(예정 포함 차감) — 검증용
+  availableNowHours: number; // 표시용 잔여(미래 예정 제외 = 발생 - 사용 - 대기)
   accrual: Accrual;
   adjustmentHours: number;
   buckets: LeaveYearBucket[]; // 시작된 모든 연차년도(활성 + 소멸)
@@ -139,6 +142,7 @@ export function computeLeaveYears(
       lastValidDate: addDaysKey(y1Expiry, -1),
       grantedHours: grantedDays * full,
       usedHours: 0,
+      scheduledHours: 0,
       pendingHours: 0,
       remainingHours: 0,
       status,
@@ -190,6 +194,7 @@ export function computeLeaveYears(
       lastValidDate: addDaysKey(expiry, -1),
       grantedHours: grantDays * full,
       usedHours: 0,
+      scheduledHours: 0,
       pendingHours: 0,
       remainingHours: 0,
       status,
@@ -207,10 +212,14 @@ export function computeLeaveYears(
     const key = l.date < y1Expiry ? 'monthly' : 'y' + yearsSince(hire, l.date);
     const b = map[key];
     if (!b) continue; // 아직 시작 안 된(미래) 연차년도 → 현재 계산 대상 아님
-    if (l.status === 'APPROVED') b.usedHours += l.hours;
-    else b.pendingHours += l.hours;
+    if (l.status === 'APPROVED') {
+      // 이미 지난 연차만 "사용"으로 차감. 미래 승인분은 "예정"으로 분리(실제 사용일에 차감).
+      if (l.date <= asOf) b.usedHours += l.hours;
+      else b.scheduledHours += l.hours;
+    } else b.pendingHours += l.hours;
   }
-  out.forEach((b) => (b.remainingHours = b.grantedHours - b.usedHours - b.pendingHours));
+  // remainingHours는 보수적(예정 포함 차감) — 검증/선사용 금지 판정용.
+  out.forEach((b) => (b.remainingHours = b.grantedHours - b.usedHours - b.scheduledHours - b.pendingHours));
   return out;
 }
 
@@ -228,13 +237,18 @@ export function computeBalance(
   const adjustmentHours = sumAdjustments(user.id, adjustments);
   const entitledHours = (active?.grantedHours ?? 0) + adjustmentHours;
   const usedHours = active?.usedHours ?? 0;
+  const scheduledHours = active?.scheduledHours ?? 0;
   const pendingHours = active?.pendingHours ?? 0;
-  const remainingHours = entitledHours - usedHours - pendingHours;
+  // 보수적 잔여(예정 포함 차감) — 선사용 금지 검증용. availableNow = 표시용(미래 예정 제외).
+  const remainingHours = entitledHours - usedHours - scheduledHours - pendingHours;
+  const availableNowHours = entitledHours - usedHours - pendingHours;
   return {
     entitledHours,
     usedHours,
+    scheduledHours,
     pendingHours,
     remainingHours,
+    availableNowHours,
     accrual: accruedDays(user.hireDate, asOf, policy),
     adjustmentHours,
     buckets,

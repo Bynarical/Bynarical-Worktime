@@ -113,13 +113,18 @@ export default function Leave() {
             <Badge text="🌴 연차" color="#fff" soft="rgba(255,255,255,0.2)" />
           </Row>
           <Text style={{ color: '#fff', fontSize: 40, fontWeight: '800', letterSpacing: -1 }}>
-            {hoursToDayLabel(balance.remainingHours, policy.fullDayHours)}
+            {hoursToDayLabel(balance.availableNowHours, policy.fullDayHours)}
           </Text>
           <Row style={{ gap: 8 }}>
             <StatTile onHero label="발생" value={hoursToDayLabel(balance.entitledHours)} sub={`${balance.entitledHours}h`} />
             <StatTile onHero label="사용" value={hoursToDayLabel(balance.usedHours)} sub={`${balance.usedHours}h`} />
             <StatTile onHero label="대기" value={hoursToDayLabel(balance.pendingHours)} sub={`${balance.pendingHours}h`} />
           </Row>
+          {balance.scheduledHours > 0 && (
+            <Text style={{ color: t.onHeroDim, fontSize: 12 }}>
+              🗓 예정된 연차 {hoursToDayLabel(balance.scheduledHours, policy.fullDayHours)} · 미래 승인분은 실제 사용일에 차감됩니다
+            </Text>
+          )}
           <Text style={{ color: t.onHeroDim, fontSize: 12 }}>{balance.accrual.basis}</Text>
           {balance.adjustmentHours !== 0 && (
             <Text style={{ color: t.onHeroDim, fontSize: 12 }}>관리자 조정: {balance.adjustmentHours > 0 ? '+' : ''}{balance.adjustmentHours}h</Text>

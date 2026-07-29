@@ -153,26 +153,34 @@ function groupsOf(trains: Train[]): { route: string; dir: 'U' | 'D'; label: stri
   return out;
 }
 
-// 즐겨찾기 한 역의 시각표 본문: 방면 칩으로 방향 지정(출퇴근 동선) → 지정 시 그 방향만 다음 5개.
+// 즐겨찾기 한 역의 시각표 본문: 방면 칩(복수 선택)으로 볼 방향 지정 → 선택 방향만 다음 5개.
 function FavBody({ st, trains, fav }: { st: Fav['favorites'][number]; trains: Train[]; fav: Fav }) {
   const t = useTheme();
   const groups = useMemo(() => groupsOf(trains), [trains]);
   const multi = useMemo(() => routesOf(trains).length > 1, [trains]);
-  const prefGroup = st.pref ? groups.find((g) => g.route === st.pref!.route && g.dir === st.pref!.dir) : undefined;
-  const shown = prefGroup ? [prefGroup] : groups;
+  const dirs = st.dirs || [];
+  const inDirs = (g: { route: string; dir: 'U' | 'D' }) => dirs.some((d) => d.route === g.route && d.dir === g.dir);
+  const selected = groups.filter(inDirs);
+  const shown = selected.length ? selected : groups; // 선택 없으면 전체
   const now = timeHM();
+  const toggle = (g: { route: string; dir: 'U' | 'D' }) => {
+    const next = inDirs(g)
+      ? dirs.filter((d) => !(d.route === g.route && d.dir === g.dir))
+      : [...dirs, { route: g.route, dir: g.dir }];
+    fav.setFavoriteDirs(st.id, next);
+  };
   return (
     <View style={{ gap: 8 }}>
       {groups.length > 1 && (
         <Row style={{ flexWrap: 'wrap', gap: 6 }}>
-          <Chip label="전체" small active={!st.pref} onPress={() => fav.setFavoritePref(st.id, null)} />
+          <Chip label="전체" small active={dirs.length === 0} onPress={() => fav.setFavoriteDirs(st.id, [])} />
           {groups.map((g) => (
             <Chip
               key={g.route + g.dir}
               small
               label={(multi ? g.route + ' ' : '') + g.label + '방면'}
-              active={!!st.pref && st.pref.route === g.route && st.pref.dir === g.dir}
-              onPress={() => fav.setFavoritePref(st.id, { route: g.route, dir: g.dir })}
+              active={inDirs(g)}
+              onPress={() => toggle(g)}
             />
           ))}
         </Row>
@@ -196,6 +204,77 @@ function FavBody({ st, trains, fav }: { st: Fav['favorites'][number]; trains: Tr
           </View>
         );
       })}
+    </View>
+  );
+}
+
+// ★로 즐겨찾기 추가 시: 해당 역의 노선·방향(방면)을 불러와 복수 선택 후 저장.
+function AddFavoritePanel({
+  station,
+  onCancel,
+  onConfirm,
+}: {
+  station: SubwayStation;
+  onCancel: () => void;
+  onConfirm: (dirs: { route: string; dir: 'U' | 'D' }[]) => void;
+}) {
+  const t = useTheme();
+  const daily = useMemo(() => dailyTypeForDate(), []);
+  const [res, setRes] = useState<TimetableResult | null>(null);
+  const [sel, setSel] = useState<{ route: string; dir: 'U' | 'D' }[]>([]);
+  useEffect(() => {
+    let a = true;
+    setRes(null);
+    fetchTimetable(station, daily).then((r) => {
+      if (a) setRes(r);
+    });
+    return () => {
+      a = false;
+    };
+  }, [station.id, daily]);
+
+  const box = { backgroundColor: t.cardAlt, borderRadius: 10, padding: 10, gap: 8 } as const;
+  if (!res) return <View style={box}><Muted size={12}>방향 정보 불러오는 중…</Muted></View>;
+  if (!res.ok || !res.trains?.length) {
+    return (
+      <View style={box}>
+        <Muted size={12}>시간표 정보가 없어 방향을 고를 수 없습니다.</Muted>
+        <Row>
+          <Button label="그래도 추가" variant="primary" small style={{ flex: 1 }} onPress={() => onConfirm([])} />
+          <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={onCancel} />
+        </Row>
+      </View>
+    );
+  }
+  const groups = groupsOf(res.trains);
+  const multi = routesOf(res.trains).length > 1;
+  const has = (g: { route: string; dir: 'U' | 'D' }) => sel.some((p) => p.route === g.route && p.dir === g.dir);
+  const toggle = (g: { route: string; dir: 'U' | 'D' }) =>
+    setSel((prev) => (has(g) ? prev.filter((p) => !(p.route === g.route && p.dir === g.dir)) : [...prev, { route: g.route, dir: g.dir }]));
+  return (
+    <View style={box}>
+      <Muted size={12}>즐겨찾기할 노선·방향 선택 (복수 가능, 미선택 시 전체)</Muted>
+      <Row style={{ flexWrap: 'wrap', gap: 6 }}>
+        {groups.map((g) => (
+          <Chip
+            key={g.route + g.dir}
+            small
+            active={has(g)}
+            label={(multi ? g.route + ' ' : '') + g.label + '방면'}
+            onPress={() => toggle(g)}
+          />
+        ))}
+      </Row>
+      <Row>
+        <Button
+          label={sel.length ? `${sel.length}개 방향 추가` : '전체 방향 추가'}
+          variant="primary"
+          small
+          style={{ flex: 1 }}
+          onPress={() => onConfirm(sel)}
+        />
+        <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={onCancel} />
+      </Row>
     </View>
   );
 }
@@ -382,6 +461,7 @@ function StationsCard({
 }) {
   const t = useTheme();
   const [open, setOpen] = useState(defaultOpen);
+  const [pickerId, setPickerId] = useState<string | null>(null);
 
   return (
     <Card>
@@ -418,8 +498,24 @@ function StationsCard({
                     </View>
                   </Row>
                 </Pressable>
-                <FavStar active={fav.isFavorite(st.id)} onPress={() => fav.toggleFavorite(st)} />
+                <FavStar
+                  active={fav.isFavorite(st.id)}
+                  onPress={() => {
+                    if (fav.isFavorite(st.id)) fav.removeFavorite(st.id);
+                    else setPickerId((p) => (p === st.id ? null : st.id));
+                  }}
+                />
               </Row>
+              {pickerId === st.id && !fav.isFavorite(st.id) ? (
+                <AddFavoritePanel
+                  station={st}
+                  onCancel={() => setPickerId(null)}
+                  onConfirm={(dirs) => {
+                    fav.addFavorite(st, dirs);
+                    setPickerId(null);
+                  }}
+                />
+              ) : null}
               {i < list.length - 1 ? <Divider /> : null}
             </View>
           ))

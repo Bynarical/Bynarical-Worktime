@@ -108,7 +108,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
   const hasWarning =
     anomalyDays > 0 ||
     unsignedWeeks > 0 ||
-    (!isAdmin && (!p?.hireDate || (balance != null && balance.remainingHours < 0)));
+    (!isAdmin && (!p?.hireDate || (balance != null && balance.availableNowHours < 0)));
 
   return {
     id,

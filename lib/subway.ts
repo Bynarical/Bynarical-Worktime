@@ -225,13 +225,14 @@ export function useHomeLocation() {
 }
 
 // ---- 자주 타는 역(즐겨찾기) 로컬 상태 훅 ----
-// pref: 선호 방향(출퇴근 동선). 설정 시 즐겨찾기 카드는 그 (노선,방향) 하나만 표시한다.
+// dirs: 즐겨찾기할 (노선,방향) 목록(복수 가능). 비어있으면 전체 방향 표시.
 export interface FavPref {
   route: string;
   dir: 'U' | 'D';
 }
 export interface FavStation extends SubwayStation {
-  pref?: FavPref;
+  dirs?: FavPref[];
+  pref?: FavPref; // legacy(단일 지정) — 로드 시 dirs로 이관
 }
 
 export function useFavorites() {
@@ -240,13 +241,16 @@ export function useFavorites() {
   useEffect(() => {
     (async () => {
       const f = await getItem<FavStation[]>(STORAGE_KEYS.SUBWAY_FAV);
-      if (Array.isArray(f)) setFavorites(f);
+      if (Array.isArray(f)) {
+        // 구버전(pref 단일) → dirs 배열로 이관
+        setFavorites(f.map((x) => (x.dirs ? x : x.pref ? { ...x, dirs: [x.pref], pref: undefined } : x)));
+      }
       setLoaded(true);
     })();
   }, []);
-  const addFavorite = useCallback((s: SubwayStation) => {
+  const addFavorite = useCallback((s: SubwayStation, dirs: FavPref[] = []) => {
     // distance 등 부가 필드 제외하고 핵심만 저장
-    const clean: FavStation = { id: s.id, name: s.name, city: s.city, lines: s.lines, lat: s.lat, lng: s.lng };
+    const clean: FavStation = { id: s.id, name: s.name, city: s.city, lines: s.lines, lat: s.lat, lng: s.lng, dirs };
     setFavorites((prev) => {
       if (prev.some((p) => p.id === clean.id)) return prev;
       const next = [...prev, clean];
@@ -261,10 +265,10 @@ export function useFavorites() {
       return next;
     });
   }, []);
-  // 선호 방향 지정/해제 (null이면 전체 표시로 되돌림)
-  const setFavoritePref = useCallback((id: string, pref: FavPref | null) => {
+  // 즐겨찾기할 방향 목록 갱신 (빈 배열이면 전체 표시)
+  const setFavoriteDirs = useCallback((id: string, dirs: FavPref[]) => {
     setFavorites((prev) => {
-      const next = prev.map((p) => (p.id === id ? { ...p, pref: pref || undefined } : p));
+      const next = prev.map((p) => (p.id === id ? { ...p, dirs } : p));
       setItem(STORAGE_KEYS.SUBWAY_FAV, next);
       return next;
     });
@@ -273,9 +277,9 @@ export function useFavorites() {
   const toggleFavorite = useCallback(
     (s: SubwayStation) => {
       if (favorites.some((p) => p.id === s.id)) removeFavorite(s.id);
-      else addFavorite(s);
+      else addFavorite(s, []);
     },
     [favorites, addFavorite, removeFavorite]
   );
-  return { favorites, addFavorite, removeFavorite, setFavoritePref, toggleFavorite, isFavorite, loaded };
+  return { favorites, addFavorite, removeFavorite, setFavoriteDirs, toggleFavorite, isFavorite, loaded };
 }
