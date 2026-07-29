@@ -45,7 +45,8 @@ export interface Train {
   route: string; // 노선명
 }
 
-export function dailyTypeForDate(ms: number = new Date().getTime()): DailyType {
+export function dailyTypeForDate(ms: number = new Date().getTime(), isHoliday = false): DailyType {
+  if (isHoliday) return '03'; // 공휴일은 일요일·공휴일 시간표 적용
   const wd = weekday(ms); // 0=일 .. 6=토 (KST)
   if (wd === 0) return '03';
   if (wd === 6) return '02';

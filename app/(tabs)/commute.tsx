@@ -15,7 +15,7 @@ import {
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
 import { getCurrentPoint, parseCoords } from '@/lib/geo';
-import { timeHM, hmToMinutes, minutesToHM } from '@/lib/time';
+import { timeHM, hmToMinutes, minutesToHM, dateKey } from '@/lib/time';
 import { GeoPoint } from '@/lib/types';
 import { SUBWAY_AUTO_REFRESH_MS } from '@/lib/config';
 import {
@@ -26,8 +26,6 @@ import {
   useFavorites,
   fetchTimetable,
   dailyTypeForDate,
-  DailyType,
-  DAILY_LABEL,
   Train,
   TimetableResult,
   nextTrainsAfter,
@@ -219,7 +217,8 @@ function AddFavoritePanel({
   onConfirm: (dirs: { route: string; dir: 'U' | 'D' }[]) => void;
 }) {
   const t = useTheme();
-  const daily = useMemo(() => dailyTypeForDate(), []);
+  const s = useStore();
+  const daily = useMemo(() => dailyTypeForDate(new Date().getTime(), s.holidaySet.has(dateKey())), [s.holidaySet]);
   const [res, setRes] = useState<TimetableResult | null>(null);
   const [sel, setSel] = useState<{ route: string; dir: 'U' | 'D' }[]>([]);
   useEffect(() => {
@@ -289,7 +288,8 @@ function FavoritesCard({
   onSelect: (s: SubwayStation) => void;
 }) {
   const t = useTheme();
-  const daily = useMemo(() => dailyTypeForDate(), []);
+  const s = useStore();
+  const daily = useMemo(() => dailyTypeForDate(new Date().getTime(), s.holidaySet.has(dateKey())), [s.holidaySet]);
   const [summaries, setSummaries] = useState<Record<string, TimetableResult>>({});
   const [busy, setBusy] = useState(false);
 
@@ -529,7 +529,7 @@ function TimetableCard({ station, onClose, fav }: { station: SubwayStation; onCl
   const t = useTheme();
   const policy = s.settings.workPolicy;
 
-  const [daily, setDaily] = useState<DailyType>(() => dailyTypeForDate());
+  const daily = useMemo(() => dailyTypeForDate(new Date().getTime(), s.holidaySet.has(dateKey())), [s.holidaySet]);
   const [refHM, setRefHM] = useState<string>(() => timeHM());
   const [res, setRes] = useState<TimetableResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -586,12 +586,6 @@ function TimetableCard({ station, onClose, fav }: { station: SubwayStation; onCl
       <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <Muted size={11}>{res?.at ? agoLabel(res.at) + (res.cached ? ' · 캐시' : '') : ''}</Muted>
         <Button label="새로고침" icon="🔄" variant="outline" small onPress={refresh} loading={refreshing} />
-      </Row>
-
-      <Row style={{ flexWrap: 'wrap' }}>
-        {(['01', '02', '03'] as DailyType[]).map((d) => (
-          <Chip key={d} label={DAILY_LABEL[d]} small active={daily === d} onPress={() => setDaily(d)} />
-        ))}
       </Row>
 
       <Row style={{ flexWrap: 'wrap' }}>
