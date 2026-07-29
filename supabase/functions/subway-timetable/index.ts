@@ -24,7 +24,7 @@ function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 }
 
-const BASE = 'https://apis.data.go.kr/1613000/SubwayInfoService';
+const BASE = 'https://apis.data.go.kr/1613000/SubwayInfo';
 
 // 응답 값에서 여러 후보 키 중 첫 유효값 (TAGO 필드명이 버전마다 미세하게 다를 수 있어 방어적으로 처리)
 function pick(obj: any, ...keys: string[]): string {
@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     if (action === 'search') {
       const name = String(body.name || '').trim();
       if (!name) return json(200, { ok: false, error: '역 이름이 필요합니다.' });
-      const items = await callTago('getKwrdFndSubwaySttnList', { serviceKey: key, subwayStationName: name });
+      const items = await callTago('GetKwrdFndSubwaySttnList', { serviceKey: key, subwayStationName: name });
       const stations = items
         .map((it) => ({
           id: pick(it, 'subwayStationId', 'subwaySttnId'),
@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
       const dirs: string[] = body.up === 'U' || body.up === 'D' ? [String(body.up)] : ['U', 'D'];
       const trains: { time: string; dir: string; daily: string; dest: string; route: string }[] = [];
       for (const up of dirs) {
-        const items = await callTago('getSubwaySttnAcctoSchdulList', {
+        const items = await callTago('GetSubwaySttnAcctoSchdulList', {
           serviceKey: key,
           subwayStationId: stationId,
           dailyTypeCode: daily,
