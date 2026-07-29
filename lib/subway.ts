@@ -83,24 +83,30 @@ export interface TimetableResult {
   ok: boolean;
   trains?: Train[];
   cached?: boolean;
+  at?: number; // 시간표를 조회(또는 캐시)한 시각(ms). 신선도 표시·자동갱신 판단용.
   error?: string;
 }
 
 // 역 시간표(요일별, 상·하행 모두). 성공 시 캐시. 오프라인/오류 시 캐시로 폴백.
-export async function fetchTimetable(station: SubwayStation, daily: DailyType): Promise<TimetableResult> {
+// opts.force=true 면 캐시가 신선해도 서버에서 다시 받아 캐시를 갱신한다(수동 새로고침).
+export async function fetchTimetable(
+  station: SubwayStation,
+  daily: DailyType,
+  opts: { force?: boolean } = {}
+): Promise<TimetableResult> {
   const cacheKey = `${STORAGE_KEYS.SUBWAY_SCHED}_${station.id}_${daily}`;
   const cached = await getItem<CacheEnvelope<Train[]>>(cacheKey);
   const fresh = cached && new Date().getTime() - cached.at < SUBWAY_CACHE_TTL;
-  if (fresh) return { ok: true, trains: cached!.data, cached: true };
+  if (fresh && !opts.force) return { ok: true, trains: cached!.data, cached: true, at: cached!.at };
 
   if (!supabase) {
-    if (cached) return { ok: true, trains: cached.data, cached: true };
+    if (cached) return { ok: true, trains: cached.data, cached: true, at: cached.at };
     return { ok: false, error: '백엔드가 설정되지 않아 시간표를 가져올 수 없습니다.' };
   }
 
   const ids = await resolveStationIds(station);
   if (!ids.length) {
-    if (cached) return { ok: true, trains: cached.data, cached: true };
+    if (cached) return { ok: true, trains: cached.data, cached: true, at: cached.at };
     return { ok: false, error: '해당 역의 시간표 정보를 찾을 수 없습니다. (지방 노선은 미제공일 수 있음)' };
   }
 
@@ -117,7 +123,7 @@ export async function fetchTimetable(station: SubwayStation, daily: DailyType): 
   }
 
   if (!all.length) {
-    if (cached) return { ok: true, trains: cached.data, cached: true };
+    if (cached) return { ok: true, trains: cached.data, cached: true, at: cached.at };
     return { ok: false, error: anyError || '시간표가 비어 있습니다.' };
   }
 
@@ -130,8 +136,9 @@ export async function fetchTimetable(station: SubwayStation, daily: DailyType): 
     return true;
   });
   dedup.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
-  await setItem(cacheKey, { at: new Date().getTime(), data: dedup } as CacheEnvelope<Train[]>);
-  return { ok: true, trains: dedup };
+  const at = new Date().getTime();
+  await setItem(cacheKey, { at, data: dedup } as CacheEnvelope<Train[]>);
+  return { ok: true, trains: dedup, at };
 }
 
 // ---- 조회 도우미 ----
@@ -154,6 +161,16 @@ export function trainsBefore(trains: Train[], beforeHM: string, count = 5): Trai
   const to = hmToMinutes(beforeHM);
   return trains.filter((t) => hmToMinutes(t.time) <= to).slice(-count);
 }
+// 기준 시각 이후 가장 가까운 열차 1대 (방향 무관) — 즐겨찾기 요약용
+export function nextTrainAfterAny(trains: Train[], fromHM: string): Train | undefined {
+  const from = hmToMinutes(fromHM);
+  let best: Train | undefined;
+  for (const t of trains) {
+    if (hmToMinutes(t.time) < from) continue;
+    if (!best || hmToMinutes(t.time) < hmToMinutes(best.time)) best = t;
+  }
+  return best;
+}
 
 // ---- 집(출발지) 로컬 상태 훅 ----
 export function useHomeLocation() {
@@ -172,4 +189,43 @@ export function useHomeLocation() {
     else await removeItem(STORAGE_KEYS.HOME);
   }, []);
   return { home, setHome, loaded };
+}
+
+// ---- 자주 타는 역(즐겨찾기) 로컬 상태 훅 ----
+export function useFavorites() {
+  const [favorites, setFavorites] = useState<SubwayStation[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const f = await getItem<SubwayStation[]>(STORAGE_KEYS.SUBWAY_FAV);
+      if (Array.isArray(f)) setFavorites(f);
+      setLoaded(true);
+    })();
+  }, []);
+  const addFavorite = useCallback((s: SubwayStation) => {
+    // distance 등 부가 필드 제외하고 핵심만 저장
+    const clean: SubwayStation = { id: s.id, name: s.name, city: s.city, lines: s.lines, lat: s.lat, lng: s.lng };
+    setFavorites((prev) => {
+      if (prev.some((p) => p.id === clean.id)) return prev;
+      const next = [...prev, clean];
+      setItem(STORAGE_KEYS.SUBWAY_FAV, next);
+      return next;
+    });
+  }, []);
+  const removeFavorite = useCallback((id: string) => {
+    setFavorites((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      setItem(STORAGE_KEYS.SUBWAY_FAV, next);
+      return next;
+    });
+  }, []);
+  const isFavorite = useCallback((id: string) => favorites.some((p) => p.id === id), [favorites]);
+  const toggleFavorite = useCallback(
+    (s: SubwayStation) => {
+      if (favorites.some((p) => p.id === s.id)) removeFavorite(s.id);
+      else addFavorite(s);
+    },
+    [favorites, addFavorite, removeFavorite]
+  );
+  return { favorites, addFavorite, removeFavorite, toggleFavorite, isFavorite, loaded };
 }

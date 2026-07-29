@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import {
   Screen,
   Hero,
@@ -21,11 +21,13 @@ import { useStore } from '@/lib/store';
 import { getCurrentPoint, parseCoords } from '@/lib/geo';
 import { timeHM, hmToMinutes, minutesToHM } from '@/lib/time';
 import { GeoPoint } from '@/lib/types';
+import { SUBWAY_AUTO_REFRESH_MS } from '@/lib/config';
 import {
   SubwayStation,
   NearbyStation,
   nearbyStations,
   useHomeLocation,
+  useFavorites,
   fetchTimetable,
   dailyTypeForDate,
   DailyType,
@@ -37,16 +39,41 @@ import {
   firstTrain,
   lastTrain,
   nextTrainsAfter,
+  nextTrainAfterAny,
 } from '@/lib/subway';
+
+type Fav = ReturnType<typeof useFavorites>;
 
 function metersLabel(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
+}
+
+// "3분 전 업데이트" 같은 신선도 라벨
+function agoLabel(at?: number): string {
+  if (!at) return '';
+  const ms = new Date().getTime() - at;
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return '방금 업데이트';
+  if (m < 60) return `${m}분 전 업데이트`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전 업데이트`;
+  return `${Math.floor(h / 24)}일 전 업데이트`;
+}
+
+function FavStar({ active, onPress }: { active: boolean; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable onPress={onPress} hitSlop={10}>
+      <Text style={{ fontSize: 20, color: active ? t.warning : t.textFaint }}>{active ? '★' : '☆'}</Text>
+    </Pressable>
+  );
 }
 
 export default function Commute() {
   const s = useStore();
   const t = useTheme();
   const { home, setHome, loaded } = useHomeLocation();
+  const fav = useFavorites();
   const [selected, setSelected] = useState<SubwayStation | null>(null);
 
   const workplace = s.settings.workplaces[0] || null;
@@ -66,6 +93,9 @@ export default function Commute() {
         </View>
       </Hero>
 
+      {/* 자주 타는 역 — 통근 탭 진입 시 바로 보임 */}
+      <FavoritesCard fav={fav} selectedId={selected?.id} onSelect={setSelected} />
+
       <HomeCard home={home} setHome={setHome} loaded={loaded} />
 
       <StationsCard
@@ -75,6 +105,7 @@ export default function Commute() {
         list={homeNear}
         selectedId={selected?.id}
         onSelect={setSelected}
+        fav={fav}
       />
 
       <StationsCard
@@ -85,18 +116,117 @@ export default function Commute() {
         list={workNear}
         selectedId={selected?.id}
         onSelect={setSelected}
+        fav={fav}
       />
 
-      {selected && <TimetableCard station={selected} onClose={() => setSelected(null)} />}
+      {selected && <TimetableCard station={selected} onClose={() => setSelected(null)} fav={fav} />}
 
       <Card>
         <Muted size={11}>
           역 위치는 앱에 내장된 전국 도시철도 데이터(서울·부산·대구·광주·대전 등)를 사용합니다. 시간표는 국토교통부(TAGO)
-          공공데이터를 조회하며, 지방 일부 노선은 제공되지 않을 수 있습니다. 집 위치는 이 기기에만 저장되고 서버로 전송되지
-          않습니다.
+          공공데이터를 조회하며, 지방 일부 노선은 제공되지 않을 수 있습니다. 시간표는 기기에 캐시되어 다음부터 빠르게 열리고,
+          오래되면 자동으로 갱신됩니다. 집 위치·즐겨찾기는 이 기기에만 저장됩니다.
         </Muted>
       </Card>
     </Screen>
+  );
+}
+
+// 자주 타는 역 카드: 진입 시 각 역 시간표를 캐시에서 즉시 요약 표시 + 오래되면 백그라운드 자동 갱신 + 수동 새로고침
+function FavoritesCard({
+  fav,
+  selectedId,
+  onSelect,
+}: {
+  fav: Fav;
+  selectedId?: string;
+  onSelect: (s: SubwayStation) => void;
+}) {
+  const t = useTheme();
+  const daily = useMemo(() => dailyTypeForDate(), []);
+  const [summaries, setSummaries] = useState<Record<string, TimetableResult>>({});
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      for (const st of fav.favorites) {
+        const r = await fetchTimetable(st, daily);
+        if (!alive) return;
+        setSummaries((prev) => ({ ...prev, [st.id]: r }));
+        // 캐시가 오래됐으면 백그라운드로 조용히 갱신
+        if (r.ok && r.at && new Date().getTime() - r.at > SUBWAY_AUTO_REFRESH_MS) {
+          const fresh = await fetchTimetable(st, daily, { force: true });
+          if (!alive) return;
+          setSummaries((prev) => ({ ...prev, [st.id]: fresh }));
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [fav.favorites, daily]);
+
+  async function refreshAll() {
+    setBusy(true);
+    for (const st of fav.favorites) {
+      const fresh = await fetchTimetable(st, daily, { force: true });
+      setSummaries((prev) => ({ ...prev, [st.id]: fresh }));
+    }
+    setBusy(false);
+  }
+
+  if (!fav.loaded) return null;
+
+  return (
+    <Card>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Row style={{ gap: 8 }}>
+          <Text style={{ fontSize: 16 }}>⭐</Text>
+          <Text style={{ fontWeight: '800', color: t.text, fontSize: 15 }}>자주 타는 역</Text>
+        </Row>
+        {fav.favorites.length > 0 && (
+          <Button label="새로고침" icon="🔄" variant="outline" small onPress={refreshAll} loading={busy} />
+        )}
+      </Row>
+
+      {fav.favorites.length === 0 ? (
+        <Muted size={12}>아래 역 목록에서 ☆ 를 눌러 자주 타는 역을 추가하면 여기에 바로 표시됩니다.</Muted>
+      ) : (
+        fav.favorites.map((st, i) => {
+          const r = summaries[st.id];
+          const next = r?.ok && r.trains ? nextTrainAfterAny(r.trains, timeHM()) : undefined;
+          const summaryText = !r
+            ? '불러오는 중…'
+            : !r.ok
+            ? '시간표 정보 없음'
+            : next
+            ? `다음 ${next.time} ${DIR_LABEL[next.dir]}${next.dest ? ` → ${next.dest}` : ''}`
+            : '금일 운행 종료';
+          return (
+            <View key={st.id}>
+              {i > 0 && <Divider />}
+              <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <Pressable style={{ flex: 1 }} onPress={() => onSelect(st)}>
+                  <Row style={{ gap: 8 }}>
+                    <Text style={{ fontSize: 15 }}>🚉</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: selectedId === st.id ? t.primary : t.text, fontWeight: '700', fontSize: 15 }}>
+                        {st.name} <Text style={{ color: t.primary, fontSize: 12 }}>시간표 ›</Text>
+                      </Text>
+                      <Text style={{ color: t.textFaint, fontSize: 12 }}>
+                        {(st.lines.join(' · ') || st.city) + ' · ' + summaryText}
+                      </Text>
+                    </View>
+                  </Row>
+                </Pressable>
+                <FavStar active onPress={() => fav.removeFavorite(st.id)} />
+              </Row>
+            </View>
+          );
+        })
+      )}
+    </Card>
   );
 }
 
@@ -176,6 +306,7 @@ function StationsCard({
   list,
   selectedId,
   onSelect,
+  fav,
 }: {
   title: string;
   icon: string;
@@ -184,6 +315,7 @@ function StationsCard({
   list: NearbyStation[];
   selectedId?: string;
   onSelect: (s: SubwayStation) => void;
+  fav: Fav;
 }) {
   const t = useTheme();
   return (
@@ -205,7 +337,12 @@ function StationsCard({
               icon={selectedId === st.id ? '✅' : '🚉'}
               label={`${st.name} · ${metersLabel(st.distance)}`}
               sub={st.lines.join(' · ') || st.city}
-              right={<Text style={{ color: t.primary, fontWeight: '700', fontSize: 13 }}>시간표 ›</Text>}
+              right={
+                <Row style={{ gap: 12 }}>
+                  <FavStar active={fav.isFavorite(st.id)} onPress={() => fav.toggleFavorite(st)} />
+                  <Text style={{ color: t.primary, fontWeight: '700', fontSize: 13 }}>시간표 ›</Text>
+                </Row>
+              }
               onPress={() => onSelect(st)}
             />
           </View>
@@ -215,7 +352,7 @@ function StationsCard({
   );
 }
 
-function TimetableCard({ station, onClose }: { station: SubwayStation; onClose: () => void }) {
+function TimetableCard({ station, onClose, fav }: { station: SubwayStation; onClose: () => void; fav: Fav }) {
   const s = useStore();
   const t = useTheme();
   const policy = s.settings.workPolicy;
@@ -225,6 +362,7 @@ function TimetableCard({ station, onClose }: { station: SubwayStation; onClose: 
   const [refHM, setRefHM] = useState<string>(() => timeHM());
   const [res, setRes] = useState<TimetableResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -240,6 +378,13 @@ function TimetableCard({ station, onClose }: { station: SubwayStation; onClose: 
       alive = false;
     };
   }, [station.id, daily]);
+
+  async function refresh() {
+    setRefreshing(true);
+    const r = await fetchTimetable(station, daily, { force: true });
+    setRes(r);
+    setRefreshing(false);
+  }
 
   // 출근/퇴근 기준 시각(정책 기반)
   const arriveBy = policy.latestClockIn; // 예: 10:00 까지 도착
@@ -262,10 +407,18 @@ function TimetableCard({ station, onClose }: { station: SubwayStation; onClose: 
             <Muted size={11}>{station.lines.join(' · ') || station.city}</Muted>
           </View>
         </Row>
-        <Button label="닫기" variant="neutral" small onPress={onClose} />
+        <Row style={{ gap: 12 }}>
+          <FavStar active={fav.isFavorite(station.id)} onPress={() => fav.toggleFavorite(station)} />
+          <Button label="닫기" variant="neutral" small onPress={onClose} />
+        </Row>
       </Row>
 
       <Divider />
+
+      <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <Muted size={11}>{res?.at ? agoLabel(res.at) + (res.cached ? ' · 캐시' : '') : ''}</Muted>
+        <Button label="새로고침" icon="🔄" variant="outline" small onPress={refresh} loading={refreshing} />
+      </Row>
 
       <Text style={{ color: t.textDim, fontSize: 12, fontWeight: '700' }}>요일</Text>
       <Row style={{ flexWrap: 'wrap' }}>
@@ -318,7 +471,6 @@ function TimetableCard({ station, onClose }: { station: SubwayStation; onClose: 
               </View>
             ))
           )}
-          {res.cached ? <Muted size={10}>· 저장된 시간표(캐시)를 표시 중</Muted> : null}
         </>
       )}
     </Card>

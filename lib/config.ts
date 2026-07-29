@@ -29,10 +29,13 @@ export const STORAGE_KEYS = {
   HOME: 'att_home', // 집(출발지) 좌표 GeoPoint
   SUBWAY_IDS: 'att_subway_ids', // 역명→TAGO 역ID 캐시 { [normName]: {id,route}[] }
   SUBWAY_SCHED: 'att_subway_sched', // 시간표 캐시 접두사: `${SUBWAY_SCHED}_${stationId}_${daily}`
+  SUBWAY_FAV: 'att_subway_fav', // 자주 타는 역 즐겨찾기 (SubwayStation[])
 } as const;
 
 // 지하철 시간표 캐시 유효기간(ms). 시간표는 개편 시에만 바뀌므로 길게 잡는다.
 export const SUBWAY_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30일
+// 즐겨찾기 역 시간표 자동 갱신 주기: 캐시가 이보다 오래되면 통근 탭 진입 시 백그라운드로 새로고침한다.
+export const SUBWAY_AUTO_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7일
 
 // 저녁식대 1일 한도(원)
 export const MEAL_DAILY_LIMIT = 20000;
