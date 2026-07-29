@@ -16,7 +16,7 @@ import {
   Field,
   Switch,
 } from '@/components/ui';
-import { useStore } from '@/lib/store';
+import { useStore, isTestAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeBalance, hoursToDayLabel, validateRequest, SEGMENT_LABELS, STATUS_LABELS } from '@/lib/leave';
 import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
@@ -238,7 +238,7 @@ function AdminApproval() {
   const s = useStore();
   const t = useTheme();
   const pending = s.leaves.filter((l) => l.status === 'REQUESTED');
-  const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p }));
+  const employees = Object.entries(s.profilesById).map(([id, p]) => ({ id, ...p })).filter((e) => !isTestAccount(e));
 
   // 직원 등록
   const [cEmail, setCEmail] = useState('');

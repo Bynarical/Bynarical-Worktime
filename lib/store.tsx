@@ -31,14 +31,18 @@ function uid(prefix: string): string {
   return `${prefix}_${new Date().getTime().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-// 직원 계정 여부. 관리자 전용 계정(관리자 권한 + 입사일 없음)은 직원이 아니므로
+// 디버그/테스트 전용 계정(name='test'). 로그인은 되지만 직원 목록·집계·선택 UI에서 항상 제외한다.
+export function isTestAccount(p: { name?: string }): boolean {
+  return (p.name || '').trim().toLowerCase() === 'test';
+}
+// 직원 계정 여부. 관리자 전용 계정(관리자 권한 + 입사일 없음)과 테스트 계정은 직원이 아니므로
 // 직원 선택/목록/입력 UI에서 제외한다. (근무하는 직원이 관리자 권한을 받은 경우엔
 // 입사일이 있으므로 계속 직원으로 취급된다.)
-export function isEmployeeAccount(p: { isAdmin?: boolean; hireDate?: string }): boolean {
-  return !(p.isAdmin && !p.hireDate);
+export function isEmployeeAccount(p: { isAdmin?: boolean; hireDate?: string; name?: string }): boolean {
+  return !isTestAccount(p) && !(p.isAdmin && !p.hireDate);
 }
-// 현재 재직 중인 직원(관리자 전용 계정·아카이브(퇴사) 제외) — 활성 목록/선택/집계용.
-export function isActiveEmployee(p: { isAdmin?: boolean; hireDate?: string; archived?: boolean }): boolean {
+// 현재 재직 중인 직원(관리자 전용 계정·테스트·아카이브(퇴사) 제외) — 활성 목록/선택/집계용.
+export function isActiveEmployee(p: { isAdmin?: boolean; hireDate?: string; archived?: boolean; name?: string }): boolean {
   return isEmployeeAccount(p) && !p.archived;
 }
 

@@ -14,7 +14,7 @@ import {
   KV,
   Field,
 } from '@/components/ui';
-import { useStore } from '@/lib/store';
+import { useStore, isTestAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { getCurrentPoint, parseCoords } from '@/lib/geo';
 import { WorkPolicy } from '@/lib/types';
@@ -118,7 +118,7 @@ function ConsentsCard() {
   const t = useTheme();
   const staff = Object.entries(s.profilesById)
     .map(([id, p]) => ({ id, ...p }))
-    .filter((e) => e.id !== s.user?.id);
+    .filter((e) => e.id !== s.user?.id && !isTestAccount(e));
   const consentOf = (id: string) => s.consents.find((c) => c.userId === id);
   const agreedCount = staff.filter((e) => consentOf(e.id)).length;
 
