@@ -140,19 +140,50 @@ export default function Commute() {
   );
 }
 
-// 노선별 다음 N개 열차를 컴팩트하게 (즐겨찾기 요약용). 환승역이면 노선마다 한 줄.
-function StationTrainSummary({ trains, count = 5 }: { trains: Train[]; count?: number }) {
+// 열차 목록을 노선×방향 그룹으로 분해 (방면 라벨=대표 종점 포함)
+function groupsOf(trains: Train[]): { route: string; dir: 'U' | 'D'; label: string; trains: Train[] }[] {
+  const out: { route: string; dir: 'U' | 'D'; label: string; trains: Train[] }[] = [];
+  for (const route of routesOf(trains)) {
+    for (const dir of ['U', 'D'] as const) {
+      const dt = trains.filter((tr) => (tr.route || '') === route && tr.dir === dir);
+      if (!dt.length) continue;
+      out.push({ route, dir, label: representativeDest(dt), trains: dt });
+    }
+  }
+  return out;
+}
+
+// 즐겨찾기 한 역의 시각표 본문: 방면 칩으로 방향 지정(출퇴근 동선) → 지정 시 그 방향만 다음 5개.
+function FavBody({ st, trains, fav }: { st: Fav['favorites'][number]; trains: Train[]; fav: Fav }) {
   const t = useTheme();
-  const routes = routesOf(trains);
+  const groups = useMemo(() => groupsOf(trains), [trains]);
+  const multi = useMemo(() => routesOf(trains).length > 1, [trains]);
+  const prefGroup = st.pref ? groups.find((g) => g.route === st.pref!.route && g.dir === st.pref!.dir) : undefined;
+  const shown = prefGroup ? [prefGroup] : groups;
   const now = timeHM();
   return (
-    <View style={{ gap: 6 }}>
-      {routes.map((route) => {
-        const rt = trains.filter((tr) => (tr.route || '') === route);
-        const up = nextTrainsAfter(rt, now, count);
+    <View style={{ gap: 8 }}>
+      {groups.length > 1 && (
+        <Row style={{ flexWrap: 'wrap', gap: 6 }}>
+          <Chip label="전체" small active={!st.pref} onPress={() => fav.setFavoritePref(st.id, null)} />
+          {groups.map((g) => (
+            <Chip
+              key={g.route + g.dir}
+              small
+              label={(multi ? g.route + ' ' : '') + g.label + '방면'}
+              active={!!st.pref && st.pref.route === g.route && st.pref.dir === g.dir}
+              onPress={() => fav.setFavoritePref(st.id, { route: g.route, dir: g.dir })}
+            />
+          ))}
+        </Row>
+      )}
+      {shown.map((g) => {
+        const up = nextTrainsAfter(g.trains, now, 5);
         return (
-          <View key={route || 'line'} style={{ gap: 4 }}>
-            <Text style={{ color: t.primary, fontSize: 11.5, fontWeight: '800' }}>{route || '노선'}</Text>
+          <View key={g.route + g.dir} style={{ gap: 4 }}>
+            <Text style={{ color: t.primary, fontSize: 11.5, fontWeight: '800' }}>
+              {(multi ? g.route + ' · ' : '') + g.label + '방면'}
+            </Text>
             {up.length === 0 ? (
               <Muted size={11}>금일 운행 종료</Muted>
             ) : (
@@ -249,7 +280,7 @@ function FavoritesCard({
               ) : !r.ok || !r.trains?.length ? (
                 <Muted size={12}>시간표 정보 없음</Muted>
               ) : (
-                <StationTrainSummary trains={r.trains} count={5} />
+                <FavBody st={st} trains={r.trains} fav={fav} />
               )}
             </View>
           );

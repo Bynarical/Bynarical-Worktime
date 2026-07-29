@@ -225,19 +225,28 @@ export function useHomeLocation() {
 }
 
 // ---- 자주 타는 역(즐겨찾기) 로컬 상태 훅 ----
+// pref: 선호 방향(출퇴근 동선). 설정 시 즐겨찾기 카드는 그 (노선,방향) 하나만 표시한다.
+export interface FavPref {
+  route: string;
+  dir: 'U' | 'D';
+}
+export interface FavStation extends SubwayStation {
+  pref?: FavPref;
+}
+
 export function useFavorites() {
-  const [favorites, setFavorites] = useState<SubwayStation[]>([]);
+  const [favorites, setFavorites] = useState<FavStation[]>([]);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     (async () => {
-      const f = await getItem<SubwayStation[]>(STORAGE_KEYS.SUBWAY_FAV);
+      const f = await getItem<FavStation[]>(STORAGE_KEYS.SUBWAY_FAV);
       if (Array.isArray(f)) setFavorites(f);
       setLoaded(true);
     })();
   }, []);
   const addFavorite = useCallback((s: SubwayStation) => {
     // distance 등 부가 필드 제외하고 핵심만 저장
-    const clean: SubwayStation = { id: s.id, name: s.name, city: s.city, lines: s.lines, lat: s.lat, lng: s.lng };
+    const clean: FavStation = { id: s.id, name: s.name, city: s.city, lines: s.lines, lat: s.lat, lng: s.lng };
     setFavorites((prev) => {
       if (prev.some((p) => p.id === clean.id)) return prev;
       const next = [...prev, clean];
@@ -252,6 +261,14 @@ export function useFavorites() {
       return next;
     });
   }, []);
+  // 선호 방향 지정/해제 (null이면 전체 표시로 되돌림)
+  const setFavoritePref = useCallback((id: string, pref: FavPref | null) => {
+    setFavorites((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, pref: pref || undefined } : p));
+      setItem(STORAGE_KEYS.SUBWAY_FAV, next);
+      return next;
+    });
+  }, []);
   const isFavorite = useCallback((id: string) => favorites.some((p) => p.id === id), [favorites]);
   const toggleFavorite = useCallback(
     (s: SubwayStation) => {
@@ -260,5 +277,5 @@ export function useFavorites() {
     },
     [favorites, addFavorite, removeFavorite]
   );
-  return { favorites, addFavorite, removeFavorite, toggleFavorite, isFavorite, loaded };
+  return { favorites, addFavorite, removeFavorite, setFavoritePref, toggleFavorite, isFavorite, loaded };
 }
