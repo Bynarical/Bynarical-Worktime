@@ -179,6 +179,31 @@ export function nextTrainAfterAny(trains: Train[], fromHM: string): Train | unde
   }
   return best;
 }
+// 열차 목록에 존재하는 노선(route) 목록 — 처음 나온 순서 유지. 환승역이면 여러 개.
+export function routesOf(trains: Train[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of trains) {
+    const r = t.route || '';
+    if (!seen.has(r)) {
+      seen.add(r);
+      out.push(r);
+    }
+  }
+  return out;
+}
+// 해당 열차들의 대표 종점(방면) = 가장 빈번한 종착역. (지하철 승강장의 "○○방면" 표기용)
+export function representativeDest(trains: Train[]): string {
+  const cnt = new Map<string, number>();
+  for (const t of trains) {
+    if (!t.dest) continue;
+    cnt.set(t.dest, (cnt.get(t.dest) || 0) + 1);
+  }
+  let best = '';
+  let n = -1;
+  for (const [d, c] of cnt) if (c > n) { n = c; best = d; }
+  return best;
+}
 
 // ---- 집(출발지) 로컬 상태 훅 ----
 export function useHomeLocation() {
