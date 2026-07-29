@@ -90,8 +90,10 @@ Deno.serve(async (req) => {
     const action = String(body.action || '');
 
     if (action === 'search') {
-      const name = String(body.name || '').trim();
-      if (!name) return json(200, { ok: false, error: '역 이름이 필요합니다.' });
+      const raw = String(body.name || '').trim();
+      if (!raw) return json(200, { ok: false, error: '역 이름이 필요합니다.' });
+      // TAGO 키워드 검색은 '역' 접미사가 붙으면 매칭이 안 되므로 끝의 '역'을 뗀다("숭실대입구역"→"숭실대입구").
+      const name = raw.replace(/역$/, '') || raw;
       const items = await callTago('GetKwrdFndSubwaySttnList', { serviceKey: key, subwayStationName: name });
       const stations = items
         .map((it) => ({
