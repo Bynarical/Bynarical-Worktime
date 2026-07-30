@@ -14,7 +14,7 @@ import {
   useTheme,
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
-import { getCurrentPoint, parseCoords } from '@/lib/geo';
+import { getCurrentPoint, parseCoords, resolveMapLink, looksLikeMapLink } from '@/lib/geo';
 import { timeHM, hmToMinutes, minutesToHM, dateKey } from '@/lib/time';
 import { GeoPoint } from '@/lib/types';
 import { SUBWAY_AUTO_REFRESH_MS } from '@/lib/config';
@@ -391,8 +391,12 @@ function HomeCard({
     } else setMsg('위치를 가져오지 못했습니다.');
   }
   async function save() {
-    const p = parseCoords(coords);
-    if (!p) return setMsg('좌표 또는 Google Maps 링크를 확인하세요.');
+    let p = parseCoords(coords);
+    if (!p && looksLikeMapLink(coords)) {
+      setMsg('링크에서 위치 확인 중...');
+      p = await resolveMapLink(coords); // 구글맵 앱 단축링크(maps.app.goo.gl 등) 서버에서 해석
+    }
+    if (!p) return setMsg('좌표 또는 Google 지도 링크를 확인하세요. (앱 공유 링크는 지도에 핀이 찍혀 있어야 합니다)');
     await setHome(p);
     setCoords('');
     setMsg('✓ 집 위치를 저장했습니다.');
@@ -418,12 +422,13 @@ function HomeCard({
           ) : (
             <>
               <Field
-                label="집 좌표 또는 Google Maps 링크"
+                label="집 좌표 또는 구글맵 링크"
                 value={coords}
                 onChangeText={setCoords}
-                placeholder="37.5665, 126.9780"
+                placeholder="37.5665,126.9780 또는 구글맵 공유(앱) 링크"
                 autoCapitalize="none"
               />
+              <Muted size={11}>구글 지도 앱에서 위치 공유 → 링크 복사해 붙여넣어도 됩니다.</Muted>
               {msg ? <Muted size={12}>{msg}</Muted> : null}
               <Row>
                 <Button label="📍 현재 위치로" variant="outline" small style={{ flex: 1 }} onPress={useCurrent} />
