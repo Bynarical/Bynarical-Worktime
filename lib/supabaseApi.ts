@@ -232,7 +232,14 @@ export async function fetchConfirmations(): Promise<Confirmation[]> {
   return (data || []).map(confFromRow);
 }
 export async function upsertConfirmation(c: Confirmation, userId: string) {
-  const { error } = await sb().from('confirmations').upsert(confToRow(c, userId), { onConflict: 'id' });
+  // (user_id, week_start) 자연키로 upsert → 같은 주 재서명 시 unique 위반으로 조용히 실패하던 문제 제거.
+  const { error } = await sb()
+    .from('confirmations')
+    .upsert(confToRow(c, userId), { onConflict: 'user_id,week_start' });
+  if (error) throw error;
+}
+export async function deleteConfirmation(id: string) {
+  const { error } = await sb().from('confirmations').delete().eq('id', id);
   if (error) throw error;
 }
 

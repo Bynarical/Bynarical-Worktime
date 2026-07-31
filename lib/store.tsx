@@ -112,6 +112,7 @@ interface StoreValue {
   addAdjustment: (userId: string, hours: number, note?: string) => Promise<void>;
 
   addConfirmation: (c: Omit<Confirmation, 'id' | 'prevHash' | 'hash'>) => Promise<void>;
+  removeConfirmation: (id: string) => Promise<void>;
 
   addWorkplace: (wp: Omit<Workplace, 'id'>) => Promise<void>;
   removeWorkplace: (id: string) => Promise<void>;
@@ -617,8 +618,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const conf: Confirmation = { ...c, id: uid('cf') } as Confirmation;
     conf.prevHash = lastHash(myConfs());
     conf.hash = chainHash(conf.prevHash, conf as any);
-    setConfirmations((prev) => [...prev, conf]);
+    setConfirmations((prev) => [...prev.filter((c) => !(c.userId === conf.userId && c.weekStart === conf.weekStart)), conf]);
     if (supabase) await api.upsertConfirmation(conf, user.id).catch((e) => console.warn('conf sync', e));
+  };
+
+  // 본인 주간 확인 해제(서명 취소) — 그 주가 다시 편집 가능해진다. 관리자는 해제할 수 없다(RLS: 본인만).
+  const removeConfirmation: StoreValue['removeConfirmation'] = async (id) => {
+    setConfirmations((prev) => prev.filter((c) => c.id !== id));
+    if (supabase) await api.deleteConfirmation(id).catch((e) => console.warn('conf delete', e));
   };
 
   // ---- workplaces / policy (admin) ----
@@ -810,6 +817,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       cancelOuting,
       addAdjustment,
       addConfirmation,
+      removeConfirmation,
       addWorkplace,
       removeWorkplace,
       adminAddHoliday,

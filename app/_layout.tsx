@@ -9,6 +9,7 @@ import { StoreProvider, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { PasswordChangePrompt } from '@/components/PasswordChangePrompt';
 import { NoticeBanner } from '@/components/NoticeBanner';
+import { AssurancePopup } from '@/components/AssurancePopup';
 
 function Gate() {
   const { ready, authed, user } = useStore();
@@ -45,6 +46,7 @@ function Gate() {
       <Slot />
       <PasswordChangePrompt />
       <NoticeBanner />
+      <AssurancePopup />
     </>
   );
 }

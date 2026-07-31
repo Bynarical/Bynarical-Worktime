@@ -19,6 +19,7 @@ import { computeDay, summarize, DayComputation } from '@/lib/attendance';
 import { SEGMENT_LABELS } from '@/lib/leave';
 import { dateKey, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
+import { confirmationCovering } from '@/lib/confirmation';
 import { toCsv, exportCsv } from '@/lib/csv';
 import { AttendanceRecord } from '@/lib/types';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
@@ -229,7 +230,7 @@ export default function Approvals() {
             <>
               {dayRows.length === 0 && <Card><Muted>이 달의 기록이 없습니다</Muted></Card>}
               {dayRows.map((r) => (
-                <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} onEdit={() => setEditDate(r.date)} />
+                <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} locked={!!confirmationCovering(s.confirmations, viewId, r.date)} onEdit={() => setEditDate(r.date)} />
               ))}
             </>
           )}
@@ -243,13 +244,16 @@ export default function Approvals() {
   );
 }
 
-function DayCard({ date, rec, comp, onEdit }: { date: string; rec?: AttendanceRecord; comp: DayComputation; onEdit?: () => void }) {
+function DayCard({ date, rec, comp, locked, onEdit }: { date: string; rec?: AttendanceRecord; comp: DayComputation; locked?: boolean; onEdit?: () => void }) {
   const t = useTheme();
   const wd = ['일', '월', '화', '수', '목', '금', '토'][new Date(date + 'T00:00:00Z').getUTCDay()];
   return (
     <Card>
       <Row style={{ justifyContent: 'space-between' }}>
-        <Body style={{ fontWeight: '700' }}>{date} ({wd})</Body>
+        <Row style={{ gap: 6, alignItems: 'center' }}>
+          <Body style={{ fontWeight: '700' }}>{date} ({wd})</Body>
+          {locked ? <Badge text="🔒 확정" color={t.textDim} /> : null}
+        </Row>
         {comp.isFullLeave ? (
           <Badge text={comp.isPaidLeave ? '종일 유급휴가' : '종일 연차'} color={comp.isPaidLeave ? t.success : t.trip} />
         ) : (
@@ -272,7 +276,7 @@ function DayCard({ date, rec, comp, onEdit }: { date: string; rec?: AttendanceRe
         </Row>
       )}
       {rec?.hash ? <Muted size={11}>해시 {shortHash(rec.hash)}</Muted> : null}
-      {onEdit ? <Button label="✏️ 근태 수정" variant="outline" small onPress={onEdit} /> : null}
+      {onEdit ? <Button label={locked ? '🔒 열람' : '✏️ 근태 수정'} variant="outline" small onPress={onEdit} /> : null}
     </Card>
   );
 }

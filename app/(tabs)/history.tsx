@@ -26,6 +26,7 @@ import {
   weekStartKey,
 } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
+import { weekSignState } from '@/lib/confirmation';
 import { toCsv, exportCsv } from '@/lib/csv';
 import { AttendanceRecord } from '@/lib/types';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
@@ -35,6 +36,7 @@ export default function History() {
   const t = useTheme();
   const [monthOffset, setMonthOffset] = useState(0);
   const [signWeek, setSignWeek] = useState<string | null>(null);
+  const [unsignWeek, setUnsignWeek] = useState<string | null>(null);
   const [sigText, setSigText] = useState('');
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [dayView, setDayView] = useState<'calendar' | 'list'>('calendar');
@@ -196,12 +198,13 @@ export default function History() {
       {/* 주간 확인(전자서명) */}
       <Card>
         <Text style={{ fontWeight: '700', color: t.text }}>주간 확인 (전자서명)</Text>
-        <Muted size={12}>시스템 기록을 기준으로 근로시간을 산정합니다. 주 단위로 확인·서명하세요.</Muted>
+        <Muted size={12}>이미 지난 주의 근로시간을 확인하고 서명하세요. 서명하면 그 주 기록이 잠겨 관리자도 수정할 수 없습니다. (진행 중인 이번 주는 주가 끝난 뒤에 서명할 수 있어요.)</Muted>
         {weeks.length === 0 && <Muted>기록이 없습니다</Muted>}
         {weeks.map(([ws, group]) => {
           const weekEnd = addDaysKey(ws, 6);
           const total = group.comp.reduce((sum, c) => sum + c.workedMinutes, 0);
           const cf = confirmedFor(ws);
+          const signState = weekSignState(ws, dateKey());
           return (
             <View key={ws} style={{ gap: 6 }}>
               <Divider />
@@ -210,14 +213,34 @@ export default function History() {
                 <Muted>{minutesToKor(total)}</Muted>
               </Row>
               {cf ? (
-                <Row>
-                  <Badge text={`✓ ${cf.signature} 서명`} color={t.success} />
-                  <Muted size={11}>해시 {shortHash(cf.hash)}</Muted>
-                </Row>
+                <View style={{ gap: 6 }}>
+                  <Row style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Badge text={`✓ ${cf.signature} 서명`} color={t.success} />
+                    <Badge text="🔒 잠금" color={t.textDim} />
+                    <Muted size={11}>해시 {shortHash(cf.hash)}</Muted>
+                  </Row>
+                  {isSelf ? (
+                    unsignWeek === ws ? (
+                      <View style={{ gap: 6 }}>
+                        <Muted size={12}>서명을 해제하면 이 주 기록을 다시 수정할 수 있게 됩니다. 해제하시겠어요?</Muted>
+                        <Row>
+                          <Button label="서명 해제" variant="danger" small style={{ flex: 1 }} onPress={() => { s.removeConfirmation(cf.id); setUnsignWeek(null); }} />
+                          <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => setUnsignWeek(null)} />
+                        </Row>
+                      </View>
+                    ) : (
+                      <Button label="서명 해제" variant="neutral" small onPress={() => setUnsignWeek(ws)} />
+                    )
+                  ) : null}
+                </View>
               ) : !isSelf ? (
                 <Muted size={12}>미서명</Muted>
-              ) : ws > dateKey() ? (
-                <Badge text="🗓 예정된 휴가" color={t.trip} soft={t.tripSoft} />
+              ) : signState !== 'past' ? (
+                <Muted size={12}>
+                  {signState === 'current'
+                    ? '🗓 이번 주는 아직 진행 중입니다 · 주가 끝난 뒤 확인·서명할 수 있어요'
+                    : '🗓 아직 시작되지 않은 주입니다 · 확인·서명 불가'}
+                </Muted>
               ) : signWeek === ws ? (
                 <View style={{ gap: 8 }}>
                   <Field label="서명(이름 입력)" value={sigText} onChangeText={setSigText} placeholder={s.user?.name} />

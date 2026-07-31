@@ -3,6 +3,7 @@ import { Modal, View, Text, ScrollView, Pressable } from 'react-native';
 import { Card, Button, Field, Chip, Row, Badge, Divider, Muted, Body } from './ui';
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
+import { confirmationCovering } from '@/lib/confirmation';
 import { timeHM, hmToMinutes, minutesToHM, ceilToStep } from '@/lib/time';
 import { AttendanceType, LeaveSegment, LeaveUnit } from '@/lib/types';
 
@@ -49,6 +50,10 @@ export function AdminDayEditor({
   const rec = s.records.find((r) => r.userId === userId && r.date === date);
   const dayLeaves = s.leaves.filter((l) => l.userId === userId && l.date === date && l.status === 'APPROVED');
   const dayAways = s.awayLogs.filter((a) => a.userId === userId && a.date === date);
+
+  // 직원이 확인·서명한 주간이면 근무기록·연차는 잠금(관리자도 수정 불가). DB 트리거로도 강제됨.
+  const lockConf = confirmationCovering(s.confirmations, userId, date);
+  const locked = !!lockConf;
 
   const [cin, setCin] = useState(rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '');
   const [cout, setCout] = useState(rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '');
@@ -141,6 +146,16 @@ export function AdminDayEditor({
               </Row>
               <Muted size={12}>관리자가 직원 대신 근태를 수정/추가합니다. 시각은 24시간 HH:MM.</Muted>
 
+              {locked ? (
+                <View style={{ backgroundColor: t.dangerSoft, borderRadius: 10, padding: 10, marginTop: 8, gap: 2 }}>
+                  <Text style={{ color: t.danger, fontWeight: '700', fontSize: 13 }}>🔒 확인·서명으로 잠긴 주간</Text>
+                  <Muted size={12}>
+                    {lockConf!.weekStart} ~ {lockConf!.weekEnd} 주는 {userName}님이 직접 확인·서명하여
+                    근무기록·연차를 수정할 수 없습니다. 수정이 필요하면 해당 직원이 [이력]에서 '서명 해제'를 해야 합니다.
+                  </Muted>
+                </View>
+              ) : null}
+
               <Divider />
               <Text style={{ fontWeight: '700', color: t.text }}>근무기록</Text>
               <Row>
@@ -159,12 +174,16 @@ export function AdminDayEditor({
               {msg ? (
                 <Muted size={12} style={{ color: msg.startsWith('✓') ? t.success : t.danger }}>{msg}</Muted>
               ) : null}
-              <Row>
-                <View style={{ flex: 1 }}>
-                  <Button label={rec ? '기록 저장' : '기록 추가'} variant="primary" small loading={busy} onPress={save} />
-                </View>
-                {rec ? <Button label="기록 삭제" variant="danger" small onPress={del} /> : null}
-              </Row>
+              {locked ? (
+                <Muted size={12} style={{ color: t.danger }}>🔒 잠긴 주간이라 근무기록을 저장·삭제할 수 없습니다.</Muted>
+              ) : (
+                <Row>
+                  <View style={{ flex: 1 }}>
+                    <Button label={rec ? '기록 저장' : '기록 추가'} variant="primary" small loading={busy} onPress={save} />
+                  </View>
+                  {rec ? <Button label="기록 삭제" variant="danger" small onPress={del} /> : null}
+                </Row>
+              )}
 
               <Divider />
               <Text style={{ fontWeight: '700', color: t.text }}>연차</Text>
@@ -174,18 +193,24 @@ export function AdminDayEditor({
                 dayLeaves.map((l) => (
                   <Row key={l.id} style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <Badge text={`${SEG_LABEL[l.segment] || l.segment} ${l.hours}h${l.category === 'PAID' ? ' 유급' : ''}`} color={t.trip} />
-                    <Button label="취소" variant="neutral" small onPress={() => delLeave(l.id)} />
+                    {locked ? null : <Button label="취소" variant="neutral" small onPress={() => delLeave(l.id)} />}
                   </Row>
                 ))
               )}
-              <Muted size={11}>연차 추가 (즉시 승인)</Muted>
-              <Row style={{ flexWrap: 'wrap' }}>
-                <Chip label="종일 8h" color={t.trip} onPress={() => addLeave('FULL', 8)} small />
-                <Chip label="오전 4h" color={t.trip} onPress={() => addLeave('AM', 4)} small />
-                <Chip label="오후 4h" color={t.trip} onPress={() => addLeave('PM', 4)} small />
-                <Chip label="오전 2h" color={t.trip} onPress={() => addLeave('AM', 2)} small />
-                <Chip label="오후 2h" color={t.trip} onPress={() => addLeave('PM', 2)} small />
-              </Row>
+              {locked ? (
+                <Muted size={12} style={{ color: t.danger }}>🔒 잠긴 주간이라 연차를 추가·취소할 수 없습니다.</Muted>
+              ) : (
+                <>
+                  <Muted size={11}>연차 추가 (즉시 승인)</Muted>
+                  <Row style={{ flexWrap: 'wrap' }}>
+                    <Chip label="종일 8h" color={t.trip} onPress={() => addLeave('FULL', 8)} small />
+                    <Chip label="오전 4h" color={t.trip} onPress={() => addLeave('AM', 4)} small />
+                    <Chip label="오후 4h" color={t.trip} onPress={() => addLeave('PM', 4)} small />
+                    <Chip label="오전 2h" color={t.trip} onPress={() => addLeave('AM', 2)} small />
+                    <Chip label="오후 2h" color={t.trip} onPress={() => addLeave('PM', 2)} small />
+                  </Row>
+                </>
+              )}
 
               <Divider />
               <Text style={{ fontWeight: '700', color: t.text }}>무단이탈 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(점수 감점)</Text></Text>

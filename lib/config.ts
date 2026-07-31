@@ -30,6 +30,7 @@ export const STORAGE_KEYS = {
   SUBWAY_IDS: 'att_subway_ids', // 역명→TAGO 역ID 캐시 { [normName]: {id,route}[] }
   SUBWAY_SCHED: 'att_subway_sched', // 시간표 캐시 접두사: `${SUBWAY_SCHED}_${stationId}_${daily}`
   SUBWAY_FAV: 'att_subway_fav', // 자주 타는 역 즐겨찾기 (SubwayStation[])
+  ASSURANCE_SEEN: 'att_assurance_seen', // 직원 안심 팝업 공지 확인 여부(공지 id 저장, 기기별 1회)
 } as const;
 
 // 지하철 시간표 캐시 유효기간(ms). 시간표는 개편 시에만 바뀌므로 길게 잡는다.
@@ -42,6 +43,12 @@ export const MEAL_DAILY_LIMIT = 20000;
 
 // 근태 안내사항 배너 노출 종료일(YYYY-MM-DD). 이 날짜까지 모든 사용자에게 안내 배너 표시.
 export const NOTICE_UNTIL = '2026-07-24';
+
+// 직원 "안심" 팝업 공지 — 주간 확인·서명 시 기록이 잠겨 관리자도 못 바꾼다는 안내.
+// 직원(비관리자)에게 기기별 1회 노출하고, 아래 종료일까지만 신규 노출한다.
+// 새 공지를 다시 띄우려면 ID를 바꾸면 된다(과거 확인 여부와 무관하게 재노출).
+export const ASSURANCE_NOTICE_ID = 'signlock-2026-08';
+export const ASSURANCE_NOTICE_UNTIL = '2026-08-31';
 
 // 위치정보 수집·이용 동의
 export const CONSENT_VERSION = 'v1';
