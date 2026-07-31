@@ -23,6 +23,7 @@ import {
   LocationConsent,
 } from './types';
 import { chainHash } from './hash';
+import { confIntegrityHash } from './confirmation';
 import { dateKey, ceilTimeToStep, timeHM, hmToMinutes } from './time';
 import { supabase, isSupabaseConfigured, makeTempClient } from './supabase';
 import * as api from './supabaseApi';
@@ -616,8 +617,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const addConfirmation: StoreValue['addConfirmation'] = async (c) => {
     if (!user) return;
     const conf: Confirmation = { ...c, id: uid('cf') } as Confirmation;
+    conf.totalWorkedMinutes = Math.round(conf.totalWorkedMinutes || 0); // DB integer 컬럼과 일치시켜 해시 재현성 보장
     conf.prevHash = lastHash(myConfs());
-    conf.hash = chainHash(conf.prevHash, conf as any);
+    // 저장 필드만으로 계산하는 무결성 해시 → 읽을 때 재현·대조 가능(변조 감지).
+    conf.hash = confIntegrityHash(conf);
     setConfirmations((prev) => [...prev.filter((c) => !(c.userId === conf.userId && c.weekStart === conf.weekStart)), conf]);
     if (supabase) await api.upsertConfirmation(conf, user.id).catch((e) => console.warn('conf sync', e));
   };

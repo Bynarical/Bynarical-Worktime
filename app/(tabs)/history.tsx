@@ -26,7 +26,7 @@ import {
   weekStartKey,
 } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
-import { weekSignState } from '@/lib/confirmation';
+import { weekSignState, weekContentHash, verifyConfirmation } from '@/lib/confirmation';
 import { toCsv, exportCsv } from '@/lib/csv';
 import { AttendanceRecord } from '@/lib/types';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
@@ -113,7 +113,8 @@ export default function History() {
       signature: sigText.trim(),
       totalWorkedMinutes: total,
       recordHashes: rows.map((r) => r.rec?.hash || '').filter(Boolean),
-      summaryHash: '',
+      // 서명 시점 그 주 내용의 다이제스트 → 이후 변조 감지 기준값
+      summaryHash: weekContentHash(s.records, s.leaves, s.user.id, weekStart, weekEnd),
       confirmedAt: new Date().toISOString(),
     });
     setSignWeek(null);
@@ -204,6 +205,8 @@ export default function History() {
           const weekEnd = addDaysKey(ws, 6);
           const total = group.comp.reduce((sum, c) => sum + c.workedMinutes, 0);
           const cf = confirmedFor(ws);
+          const verdict = cf ? verifyConfirmation(cf, s.records, s.leaves) : 'ok';
+          const tampered = verdict === 'tampered';
           const signState = weekSignState(ws, dateKey());
           return (
             <View key={ws} style={{ gap: 6 }}>
@@ -215,10 +218,19 @@ export default function History() {
               {cf ? (
                 <View style={{ gap: 6 }}>
                   <Row style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Badge text={`✓ ${cf.signature} 서명`} color={t.success} />
-                    <Badge text="🔒 잠금" color={t.textDim} />
+                    <Badge text={`✓ ${cf.signature} 서명`} color={tampered ? t.danger : t.success} />
+                    {tampered ? (
+                      <Badge text="⚠ 서명 후 변경됨" color={t.danger} soft={t.dangerSoft} />
+                    ) : (
+                      <Badge text="🔒 잠금" color={t.textDim} />
+                    )}
                     <Muted size={11}>해시 {shortHash(cf.hash)}</Muted>
                   </Row>
+                  {tampered ? (
+                    <Muted size={12} style={{ color: t.danger }}>
+                      서명 당시 기록과 현재 기록이 다릅니다. 관리자에게 확인하고, 맞으면 서명을 해제한 뒤 다시 서명하세요.
+                    </Muted>
+                  ) : null}
                   {isSelf ? (
                     unsignWeek === ws ? (
                       <View style={{ gap: 6 }}>
