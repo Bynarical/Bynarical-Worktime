@@ -85,15 +85,20 @@ export function confIntegrityHash(
 
 export type ConfVerdict = 'ok' | 'tampered' | 'unverifiable';
 
-// 서명 검증: 행 자체가 변조됐거나(요약해시·행해시 불일치), 서명 후 그 주 기록이
-// 바뀌었으면 'tampered'. 스냅샷이 없는 구버전 서명은 'unverifiable'(검증 불가).
+// 서명 검증: "서명 시점 그 주 내용의 다이제스트(summary_hash)"를 현재 기록으로 다시
+// 계산해 대조한다. 다르면 서명 후 기록이 바뀐 것('tampered'). 스냅샷이 없는 구버전
+// 서명은 'unverifiable'(검증 불가).
+//
+// ⚠ 행 자체 해시(conf.hash)는 검증에 쓰지 않는다: 거기에 들어가는 서명 시각 문자열이
+// DB 왕복 때 포맷이 달라져(예: 서명 "....460Z" ↔ 조회 "....46+00:00") 재현되지 않아
+// 모든 새 서명을 "변경됨"으로 오탐시켰다. conf.hash 는 화면 표시용 영수증 값으로만 보관.
 export function verifyConfirmation(
   conf: Confirmation,
   records: AttendanceRecord[],
   leaves: LeaveRequest[]
 ): ConfVerdict {
-  if (!conf.summaryHash || !conf.hash) return 'unverifiable';
-  if (confIntegrityHash(conf) !== conf.hash) return 'tampered';
-  if (weekContentHash(records, leaves, conf.userId, conf.weekStart, conf.weekEnd) !== conf.summaryHash) return 'tampered';
-  return 'ok';
+  if (!conf.summaryHash) return 'unverifiable';
+  return weekContentHash(records, leaves, conf.userId, conf.weekStart, conf.weekEnd) === conf.summaryHash
+    ? 'ok'
+    : 'tampered';
 }
