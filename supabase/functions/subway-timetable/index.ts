@@ -49,9 +49,16 @@ function toHM(raw: string): string {
 }
 
 function itemsOf(data: any): any[] {
-  const header = data?.response?.header;
-  if (header && header.resultCode && header.resultCode !== '00' && header.resultCode !== '0') {
-    throw new Error(`TAGO 오류 ${header.resultCode}: ${header.resultMsg || ''}`);
+  // 정상 응답은 resultCode 가 response.header 에, 오류 응답은 최상위 header(또는 cmmMsgHeader)에 온다.
+  // 예전엔 response.header 만 봐서 인증오류(예: rc 01 "serviceKey 필수")를 못 잡고 빈 결과로 삼켰다.
+  const header = data?.response?.header ?? data?.header;
+  const rc = header?.resultCode;
+  if (rc && rc !== '00' && rc !== '0') {
+    throw new Error(`TAGO ${rc}: ${header?.resultMsg || ''}`);
+  }
+  const alt = data?.OpenAPI_ServiceResponse?.cmmMsgHeader;
+  if (alt?.returnReasonCode && alt.returnReasonCode !== '00') {
+    throw new Error(`TAGO ${alt.returnReasonCode}: ${alt.returnAuthMsg || alt.errMsg || ''}`);
   }
   const items = data?.response?.body?.items;
   if (!items || items === '') return [];
