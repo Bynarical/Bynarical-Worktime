@@ -91,8 +91,11 @@ interface StoreValue {
   adminDeleteEmployee: (userId: string) => Promise<{ ok: boolean; error?: string }>;
   refresh: () => Promise<void>;
 
-  checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean; pending?: boolean }) => Promise<void>;
-  checkOut: (args: { point?: GeoPoint; within?: boolean }) => Promise<void>;
+  // 반환값: true=서버 저장 성공(또는 로컬 전용 모드), false=서버 저장 실패(미저장 대기열에 넣고 자동 재시도)
+  checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean; pending?: boolean }) => Promise<boolean>;
+  checkOut: (args: { point?: GeoPoint; within?: boolean }) => Promise<boolean>;
+  unsynced: AttendanceRecord[]; // 서버 저장 실패로 재전송 대기 중인 기록
+  resyncRecords: () => Promise<void>; // 미저장 기록 수동 재전송
   clearAllRecords: () => Promise<void>;
   adminApproveAttendance: (recordId: string) => Promise<void>;
   adminRejectAttendance: (recordId: string) => Promise<void>;
@@ -144,6 +147,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [unsynced, setUnsynced] = useState<AttendanceRecord[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [adjustments, setAdjustments] = useState<LeaveAdjustment[]>([]);
   const [confirmations, setConfirmations] = useState<Confirmation[]>([]);
@@ -381,17 +385,56 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const myConfs = () => confirmations.filter((c) => c.userId === user?.id);
   const lastHash = (arr: { hash?: string }[]) => (arr.length ? arr[arr.length - 1].hash || '' : '');
 
-  async function persistRecord(rec: AttendanceRecord) {
+  // 미저장(동기화 실패) 대기열 관리 — 저장소가 진실의 원천
+  async function addUnsynced(rec: AttendanceRecord) {
+    const q = (await getItem<AttendanceRecord[]>(STORAGE_KEYS.UNSYNCED_RECORDS)) || [];
+    const next = [...q.filter((r) => r.id !== rec.id), rec];
+    await setItem(STORAGE_KEYS.UNSYNCED_RECORDS, next);
+    setUnsynced(next);
+  }
+  async function removeUnsynced(id: string) {
+    const q = (await getItem<AttendanceRecord[]>(STORAGE_KEYS.UNSYNCED_RECORDS)) || [];
+    const next = q.filter((r) => r.id !== id);
+    if (next.length !== q.length) {
+      await setItem(STORAGE_KEYS.UNSYNCED_RECORDS, next);
+      setUnsynced(next);
+    }
+  }
+  // 미저장 기록 재전송(로드 시 1회 + 대기열 있으면 주기적으로). 성공분만 큐에서 제거.
+  async function resyncRecords() {
+    if (!supabase || !user) return;
+    const q = (await getItem<AttendanceRecord[]>(STORAGE_KEYS.UNSYNCED_RECORDS)) || [];
+    if (!q.length) return;
+    const remaining: AttendanceRecord[] = [];
+    for (const rec of q) {
+      if (rec.userId !== user.id) { remaining.push(rec); continue; } // 다른 사용자 것은 보존
+      try { await api.upsertRecord(rec, user.id); } catch { remaining.push(rec); }
+    }
+    await setItem(STORAGE_KEYS.UNSYNCED_RECORDS, remaining);
+    setUnsynced(remaining);
+  }
+
+  // 로컬 낙관적 반영 후 서버 저장. 성공=true, 실패=false(대기열에 넣고 자동 재시도).
+  async function persistRecord(rec: AttendanceRecord): Promise<boolean> {
     setRecords((prev) => {
       const others = prev.filter((r) => r.id !== rec.id);
       return [...others, rec];
     });
-    if (supabase && user) await api.upsertRecord(rec, user.id).catch((e) => console.warn('record sync', e));
+    if (!(supabase && user)) return true; // 백엔드 없음(로컬 전용) — 실패할 서버가 없음
+    try {
+      await api.upsertRecord(rec, user.id);
+      await removeUnsynced(rec.id); // 이전 실패분이 있었다면 해소
+      return true;
+    } catch (e) {
+      console.warn('record sync', e);
+      await addUnsynced(rec);
+      return false;
+    }
   }
 
   // ---- attendance ----
   const checkIn: StoreValue['checkIn'] = async ({ type, point, workplace, within, pending }) => {
-    if (!user) return;
+    if (!user) return false;
     const d = dateKey();
     const nowMsVal = new Date().getTime();
     const nowIso = new Date(nowMsVal).toISOString();
@@ -422,19 +465,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
     rec.prevHash = lastHash(myRecords().filter((r) => r.id !== rec.id));
     rec.hash = chainHash(rec.prevHash, rec as any);
-    await persistRecord(rec);
+    return await persistRecord(rec);
   };
 
   const checkOut: StoreValue['checkOut'] = async ({ point, within }) => {
-    if (!user) return;
+    if (!user) return false;
     const d = dateKey();
     const existing = records.find((r) => r.userId === user.id && r.date === d);
-    if (!existing) return;
+    if (!existing) return true; // 출근 기록이 없으면 할 일 없음(실패 아님)
     const nowIso = new Date().toISOString();
     const rec: AttendanceRecord = { ...existing, checkOut: nowIso, outLocation: point, outVerified: within, updatedAt: nowIso };
     rec.prevHash = lastHash(myRecords().filter((r) => r.id !== rec.id));
     rec.hash = chainHash(rec.prevHash, rec as any);
-    await persistRecord(rec);
+    return await persistRecord(rec);
   };
 
   const clearAllRecords = async () => {
@@ -762,6 +805,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, authed, user?.isAdmin]);
 
+  // 미저장 근태 기록: 마운트 시 대기열 로드 → 로그인 후 즉시 1회 재전송, 남아있으면 20초마다 재시도.
+  useEffect(() => {
+    (async () => {
+      const q = (await getItem<AttendanceRecord[]>(STORAGE_KEYS.UNSYNCED_RECORDS)) || [];
+      if (q.length) setUnsynced(q);
+    })();
+  }, []);
+  useEffect(() => {
+    if (!ready || !authed || !user || !supabase) return;
+    resyncRecords();
+    if (unsynced.length === 0) return;
+    const id = setInterval(() => resyncRecords(), 20000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, authed, user?.id, unsynced.length]);
+
   const updateWorkPolicy = async (patch: Partial<WorkPolicy>) => {
     const wpNext = { ...settings.workPolicy, ...patch };
     setSettings((prev) => ({ ...prev, workPolicy: wpNext }));
@@ -782,6 +841,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       user,
       settings,
       records,
+      unsynced,
+      resyncRecords,
       leaves,
       adjustments,
       confirmations,
@@ -835,7 +896,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateLeavePolicy,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, needsConfig, authed, busy, user, settings, records, leaves, adjustments, confirmations, profilesById, holidays, meals, awayLogs, consents, passwordChanged]
+    [ready, needsConfig, authed, busy, user, settings, records, unsynced, leaves, adjustments, confirmations, profilesById, holidays, meals, awayLogs, consents, passwordChanged]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

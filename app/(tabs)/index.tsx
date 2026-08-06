@@ -83,6 +83,10 @@ export default function Today() {
   // 외출(중간 연차)
   const todayOutings = todaysLeaves.filter((l) => l.segment === 'CUSTOM');
   const openOuting = todayOutings.find((l) => !l.endTime && l.status === 'REQUESTED');
+
+  // 경고 배너: ① 서버 미저장 기록 ② 퇴근 체크 리마인더(근무 중 + 예상 퇴근 지남)
+  const unsyncedMine = s.unsynced.some((r) => r.userId === s.user?.id);
+  const shouldRemindCheckout = state === 'working' && comp.expectedOutMin > 0 && minutesOfDay(now) >= comp.expectedOutMin;
   const remaining = Math.max(0, comp.requiredMinutes - workedNow);
   const progress = comp.requiredMinutes > 0 ? workedNow / comp.requiredMinutes : 0;
 
@@ -112,9 +116,11 @@ export default function Today() {
     }
     // 근무지 밖 일반 출근(출장 아님)은 관리자 승인 대기로 기록
     const pendingApproval = kind === 'WORK' && !within;
-    await s.checkIn({ type: kind, point: point ?? undefined, workplace, within, pending: pendingApproval });
+    const ok = await s.checkIn({ type: kind, point: point ?? undefined, workplace, within, pending: pendingApproval });
     setGeoMsg(
-      pendingApproval
+      !ok
+        ? '⚠️ 서버 저장 실패 — 인터넷 연결을 확인해 주세요. 기록은 임시 저장했고, 연결되면 자동으로 전송합니다.'
+        : pendingApproval
         ? `기록됨 — 근무지 반경 밖이라 관리자 승인 후 출근 처리됩니다.${point ? ` (${Math.round(dist)}m)` : ''}`
         : point
         ? within
@@ -138,8 +144,14 @@ export default function Today() {
       within = n.within;
       dist = n.distance;
     }
-    await s.checkOut({ point: point ?? undefined, within });
-    setGeoMsg(point ? `퇴근 기록됨 (${Math.round(dist)}m)` : '퇴근 기록됨 (위치 없음)');
+    const ok = await s.checkOut({ point: point ?? undefined, within });
+    setGeoMsg(
+      !ok
+        ? '⚠️ 서버 저장 실패 — 인터넷 연결을 확인해 주세요. 퇴근 기록은 임시 저장했고, 연결되면 자동으로 전송합니다.'
+        : point
+        ? `퇴근 기록됨 (${Math.round(dist)}m)`
+        : '퇴근 기록됨 (위치 없음)'
+    );
     setBusy(false);
   }
 
@@ -223,6 +235,29 @@ export default function Today() {
             <Body style={{ fontWeight: '700' }}>근무지 밖 출근</Body>
           </Row>
           <Muted size={12}>관리자가 확인·승인해야 출근으로 최종 처리됩니다.</Muted>
+        </Card>
+      )}
+
+      {/* ⚠️ 서버 미저장 경고 — 저장 실패로 재전송 대기 중 */}
+      {unsyncedMine && (
+        <Card style={{ borderColor: t.danger, borderWidth: 1.5 }}>
+          <Row style={{ gap: 8, alignItems: 'center' }}>
+            <Badge text="미저장" color={t.danger} />
+            <Body style={{ fontWeight: '700' }}>서버에 저장되지 않은 기록이 있어요</Body>
+          </Row>
+          <Muted size={12}>인터넷 연결이 불안정해 출퇴근 기록이 서버로 전송되지 않았습니다. 연결되면 자동으로 다시 보냅니다. 계속 이 표시가 남아 있으면 연결을 확인해 주세요.</Muted>
+          <Button label="지금 다시 전송" variant="outline" small icon="🔄" onPress={() => s.resyncRecords()} />
+        </Card>
+      )}
+
+      {/* 🔔 퇴근 체크 리마인더 — 근무 중 + 예상 퇴근 시각 지남 */}
+      {shouldRemindCheckout && (
+        <Card style={{ borderColor: t.warning, borderWidth: 1.5 }}>
+          <Row style={{ gap: 8, alignItems: 'center' }}>
+            <Text style={{ fontSize: 16 }}>🔔</Text>
+            <Body style={{ fontWeight: '700' }}>퇴근 체크 잊지 마세요</Body>
+          </Row>
+          <Muted size={12}>예상 퇴근 시각({minutesToHM(comp.expectedOutMin)})이 지났습니다. 실제 퇴근하실 때 아래 [퇴근] 버튼을 꼭 눌러주세요. 누르지 않으면 '퇴근 미기록'으로 남습니다.</Muted>
         </Card>
       )}
 
@@ -340,7 +375,7 @@ export default function Today() {
 
       {/* 위치 메시지 */}
       {geoMsg ? (
-        <Card style={{ borderColor: confirmOutOfRange ? t.warning : t.border }}>
+        <Card style={{ borderColor: confirmOutOfRange ? t.warning : geoMsg.startsWith('⚠️') ? t.danger : t.border }}>
           <Muted size={13}>{geoMsg}</Muted>
           {confirmOutOfRange && (
             <Row>

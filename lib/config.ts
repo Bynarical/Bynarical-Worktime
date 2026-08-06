@@ -31,6 +31,7 @@ export const STORAGE_KEYS = {
   SUBWAY_SCHED: 'att_subway_sched', // 시간표 캐시 접두사: `${SUBWAY_SCHED}_${stationId}_${daily}`
   SUBWAY_FAV: 'att_subway_fav', // 자주 타는 역 즐겨찾기 (SubwayStation[])
   ASSURANCE_SEEN: 'att_assurance_seen', // 직원 안심 팝업 공지 확인 여부(공지 id 저장, 기기별 1회)
+  UNSYNCED_RECORDS: 'att_unsynced_records', // 서버 저장 실패한 근태 기록(오프라인/네트워크 오류) 재전송 대기열
 } as const;
 
 // 지하철 시간표 캐시 유효기간(ms). 시간표는 개편 시에만 바뀌므로 길게 잡는다.
