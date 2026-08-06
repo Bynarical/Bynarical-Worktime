@@ -50,6 +50,7 @@ export default function Today() {
   const [trip, setTrip] = useState(false);
   const [geoMsg, setGeoMsg] = useState('');
   const [confirmOutOfRange, setConfirmOutOfRange] = useState(false);
+  const [checkoutNotice, setCheckoutNotice] = useState(false); // 출근 직후 "퇴근 체크 잊지 마세요" 안내
   const [showHelp, setShowHelp] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentMsg, setConsentMsg] = useState('');
@@ -87,6 +88,16 @@ export default function Today() {
   // 경고 배너: ① 서버 미저장 기록 ② 퇴근 체크 리마인더(근무 중 + 예상 퇴근 지남)
   const unsyncedMine = s.unsynced.some((r) => r.userId === s.user?.id);
   const shouldRemindCheckout = state === 'working' && comp.expectedOutMin > 0 && minutesOfDay(now) >= comp.expectedOutMin;
+
+  // ③ 지난날 퇴근 누락(출근했는데 퇴근 안 누른 지난 날). 최근 14일만 확인.
+  const missedCheckouts = useMemo(() => {
+    const from = dateKey(now - 14 * 86400000);
+    return s.records
+      .filter((r) => r.userId === s.user?.id && r.date < today && r.date >= from && r.checkIn && !r.checkOut)
+      .map((r) => r.date)
+      .sort()
+      .reverse();
+  }, [s.records, s.user?.id, today, now]);
   const remaining = Math.max(0, comp.requiredMinutes - workedNow);
   const progress = comp.requiredMinutes > 0 ? workedNow / comp.requiredMinutes : 0;
 
@@ -128,6 +139,8 @@ export default function Today() {
           : `기록됨 (반경 밖 ${Math.round(dist)}m)`
         : '기록됨 (위치 없음)'
     );
+    // 출근 직후 퇴근 체크를 각인시키는 리마인드(알림 대신 화면 안내). 저장 성공 시에만.
+    if (ok) setCheckoutNotice(true);
     setConfirmOutOfRange(false);
     setBusy(false);
   }
@@ -250,6 +263,22 @@ export default function Today() {
         </Card>
       )}
 
+      {/* 🔔 출근 직후 리마인드 — 퇴근 가능 시각 각인 + 퇴근 체크 당부 */}
+      {checkoutNotice && state === 'working' && (
+        <Card style={{ borderColor: t.primary, borderWidth: 1.5 }}>
+          <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <Row style={{ gap: 8, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16 }}>🔔</Text>
+              <Body style={{ fontWeight: '700' }}>퇴근할 때 [퇴근하기] 버튼 꼭 눌러주세요</Body>
+            </Row>
+            <Pressable onPress={() => setCheckoutNotice(false)} hitSlop={10}>
+              <Text style={{ color: t.textDim, fontSize: 18 }}>✕</Text>
+            </Pressable>
+          </Row>
+          <Muted size={12}>누르지 않으면 '퇴근 미기록'으로 남아 근로시간이 인정되지 않습니다.</Muted>
+        </Card>
+      )}
+
       {/* 🔔 퇴근 체크 리마인더 — 근무 중 + 예상 퇴근 시각 지남 */}
       {shouldRemindCheckout && (
         <Card style={{ borderColor: t.warning, borderWidth: 1.5 }}>
@@ -257,7 +286,22 @@ export default function Today() {
             <Text style={{ fontSize: 16 }}>🔔</Text>
             <Body style={{ fontWeight: '700' }}>퇴근 체크 잊지 마세요</Body>
           </Row>
-          <Muted size={12}>예상 퇴근 시각({minutesToHM(comp.expectedOutMin)})이 지났습니다. 실제 퇴근하실 때 아래 [퇴근] 버튼을 꼭 눌러주세요. 누르지 않으면 '퇴근 미기록'으로 남습니다.</Muted>
+          <Muted size={12}>퇴근할 때 아래 [퇴근하기] 버튼 꼭 눌러주세요. 누르지 않으면 '퇴근 미기록'으로 남습니다.</Muted>
+        </Card>
+      )}
+
+      {/* ⚠️ 지난날 퇴근 누락 — 출근 화면에서 상기 */}
+      {missedCheckouts.length > 0 && (
+        <Card style={{ borderColor: t.danger, borderWidth: 1.5 }}>
+          <Row style={{ gap: 8, alignItems: 'center' }}>
+            <Badge text="퇴근 미기록" color={t.danger} />
+            <Body style={{ fontWeight: '700' }}>퇴근을 누르지 않은 날이 있습니다</Body>
+          </Row>
+          <Muted size={12}>
+            {missedCheckouts.slice(0, 5).join(', ')}
+            {missedCheckouts.length > 5 ? ` 외 ${missedCheckouts.length - 5}일` : ''} — 출근 기록만 있고 퇴근이 없습니다.
+            해당 날짜의 근로시간이 인정되지 않으니 관리자에게 알려 정정해 주세요. 퇴근할 때 [퇴근하기] 버튼 꼭 눌러주세요.
+          </Muted>
         </Card>
       )}
 
@@ -289,6 +333,7 @@ export default function Today() {
             <StatTile label="소정근로" value={minutesToKor(comp.requiredMinutes)} />
           </Row>
           <Muted size={12}>출근 시각은 {policy.clockInStepMinutes}분 단위로 자동 적용됩니다 (예: 8:20 → 8:30). 실제 출근시각은 그대로 기록됩니다.</Muted>
+          <Muted size={12} style={{ color: t.primary }}>🔔 퇴근할 때 [퇴근하기] 버튼 꼭 눌러주세요.</Muted>
           {previewStartMin > hmToMinutes(policy.latestClockIn) + 0.01 && (
             <Muted size={12} style={{ color: t.danger }}>⚠️ 코어타임 시작({policy.latestClockIn}) 이후 출근은 지각으로 기록됩니다.</Muted>
           )}
