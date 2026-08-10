@@ -22,6 +22,7 @@ import {
 } from '@/components/ui';
 import { useStore } from '@/lib/store';
 import { HelpManual } from '@/components/HelpManual';
+import { SignReminderPopup } from '@/components/SignReminderPopup';
 import { getCurrentPoint, nearestWorkplace } from '@/lib/geo';
 import { computeDay, workEndMinutes } from '@/lib/attendance';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
@@ -476,6 +477,8 @@ export default function Today() {
       <Divider />
 
       {showHelp && <HelpManual onClose={() => setShowHelp(false)} />}
+      {/* 주 1회(월요일부터) 지난 출근부 서명 리마인드 — 안내 모달과 겹치지 않게 자체 판단 */}
+      {!showHelp && <SignReminderPopup />}
     </Screen>
   );
 }

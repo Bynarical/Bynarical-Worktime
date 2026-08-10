@@ -1,5 +1,5 @@
 import { Confirmation, AttendanceRecord, LeaveRequest } from './types';
-import { weekStartKey, dateKey } from './time';
+import { weekStartKey, dateKey, addDaysKey } from './time';
 import { sha256, canonical } from './hash';
 
 // 해당 (userId, date)가 확인·서명된 주간에 속하면 그 확인 레코드를 반환.
@@ -25,6 +25,34 @@ export function weekSignState(
   if (weekStart < thisWeekStart) return 'past';
   if (weekStart === thisWeekStart) return 'current';
   return 'future';
+}
+
+// 서명이 필요한 "이미 지난 주" 목록(최근 것부터). 기록(또는 승인 연차)이 있는 주만 대상이며
+// 이미 확인·서명한 주는 제외한다. maxWeeks 이전(너무 오래된 주)은 잔소리 방지를 위해 제외.
+export function unsignedPastWeeks(
+  records: AttendanceRecord[],
+  leaves: LeaveRequest[],
+  confirmations: Confirmation[],
+  userId: string | null | undefined,
+  todayStr: string = dateKey(),
+  maxWeeks = 8
+): string[] {
+  if (!userId) return [];
+  const thisWeekStart = weekStartKey(todayStr);
+  const oldest = addDaysKey(thisWeekStart, -7 * maxWeeks); // 이 주 이전은 무시
+  const weeks = new Set<string>();
+  for (const r of records) {
+    if (r.userId !== userId || !r.checkIn) continue;
+    const ws = weekStartKey(r.date);
+    if (ws < thisWeekStart && ws >= oldest) weeks.add(ws);
+  }
+  for (const l of leaves) {
+    if (l.userId !== userId || l.status !== 'APPROVED') continue;
+    const ws = weekStartKey(l.date);
+    if (ws < thisWeekStart && ws >= oldest) weeks.add(ws);
+  }
+  const signed = new Set(confirmations.filter((c) => c.userId === userId).map((c) => c.weekStart));
+  return [...weeks].filter((ws) => !signed.has(ws)).sort().reverse();
 }
 
 // ── 변조 감지(해시검증) ──────────────────────────────────────────
@@ -68,14 +96,18 @@ export function weekContentHash(
 
 // 확인(서명) 행 자체의 무결성 해시. 저장되는 필드만으로 계산 → 읽을 때 재현 가능.
 export function confIntegrityHash(
-  c: Pick<Confirmation, 'userId' | 'weekStart' | 'weekEnd' | 'signature' | 'totalWorkedMinutes' | 'summaryHash' | 'confirmedAt'>
+  c: Pick<Confirmation, 'userId' | 'weekStart' | 'weekEnd' | 'signature' | 'totalWorkedMinutes' | 'summaryHash' | 'confirmedAt'> & {
+    authMethod?: Confirmation['authMethod'];
+  }
 ): string {
   return sha256(
+    // canonical()이 undefined 필드를 제외하므로, authMethod 없는 구버전 서명은 해시가 그대로 유지된다.
     canonical({
       userId: c.userId,
       weekStart: c.weekStart,
       weekEnd: c.weekEnd,
       signature: c.signature,
+      authMethod: c.authMethod,
       totalWorkedMinutes: Math.round(c.totalWorkedMinutes || 0),
       summaryHash: c.summaryHash || '',
       confirmedAt: c.confirmedAt,

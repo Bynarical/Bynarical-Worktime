@@ -89,7 +89,10 @@ export interface Confirmation {
   userName?: string;
   weekStart: string; // 월요일 YYYY-MM-DD
   weekEnd: string; // 일요일 YYYY-MM-DD
-  signature: string; // 서명(이름 타이핑 또는 데이터)
+  signature: string; // 서명자 표기(본인 이름)
+  // 서명 시 본인 확인 방식. 'PASSWORD'=비밀번호 재입력을 서버(Supabase auth)로 검증함.
+  // 'NAME'=구버전(이름만 타이핑). 증빙력 차이를 남기기 위해 함께 저장한다.
+  authMethod?: 'PASSWORD' | 'NAME';
   totalWorkedMinutes: number;
   recordHashes: string[];
   summaryHash: string;

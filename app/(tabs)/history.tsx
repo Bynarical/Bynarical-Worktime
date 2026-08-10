@@ -37,7 +37,9 @@ export default function History() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [signWeek, setSignWeek] = useState<string | null>(null);
   const [unsignWeek, setUnsignWeek] = useState<string | null>(null);
-  const [sigText, setSigText] = useState('');
+  const [sigText, setSigText] = useState(''); // 서명용 비밀번호 입력값
+  const [signBusy, setSignBusy] = useState(false);
+  const [signMsg, setSignMsg] = useState('');
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [dayView, setDayView] = useState<'calendar' | 'list'>('calendar');
 
@@ -101,8 +103,22 @@ export default function History() {
     return s.confirmations.find((c) => c.userId === viewId && c.weekStart === weekStart);
   }
 
+  // 서명 = 본인 비밀번호 재입력. 서버(Supabase auth)로 검증해야 통과하므로,
+  // "열린 세션으로 누가 눌렀다"가 아니라 본인이 그 시점에 인증했음을 남긴다.
   async function submitSignature(weekStart: string, rows: typeof dayRows) {
-    if (!sigText.trim() || !s.user) return;
+    if (!s.user || signBusy) return;
+    setSignMsg('');
+    if (!sigText) {
+      setSignMsg('본인 확인을 위해 비밀번호를 입력해 주세요.');
+      return;
+    }
+    setSignBusy(true);
+    const okPw = await s.verifyPassword(sigText);
+    if (!okPw) {
+      setSignBusy(false);
+      setSignMsg('비밀번호가 일치하지 않습니다. 다시 입력해 주세요.');
+      return;
+    }
     const weekEnd = addDaysKey(weekStart, 6);
     const total = rows.reduce((sum, r) => sum + r.comp.workedMinutes, 0);
     await s.addConfirmation({
@@ -110,13 +126,15 @@ export default function History() {
       userName: s.user.name,
       weekStart,
       weekEnd,
-      signature: sigText.trim(),
+      signature: s.user.name, // 표기용 서명자명(본인 확인은 비밀번호로 완료)
+      authMethod: 'PASSWORD',
       totalWorkedMinutes: total,
       recordHashes: rows.map((r) => r.rec?.hash || '').filter(Boolean),
       // 서명 시점 그 주 내용의 다이제스트 → 이후 변조 감지 기준값
       summaryHash: weekContentHash(s.records, s.leaves, s.user.id, weekStart, weekEnd),
       confirmedAt: new Date().toISOString(),
     });
+    setSignBusy(false);
     setSignWeek(null);
     setSigText('');
   }
@@ -224,6 +242,7 @@ export default function History() {
                     ) : (
                       <Badge text="🔒 잠금" color={t.textDim} />
                     )}
+                    {cf.authMethod === 'PASSWORD' ? <Badge text="🔐 비밀번호 인증" color={t.success} soft={t.successSoft} /> : null}
                     <Muted size={11}>해시 {shortHash(cf.hash)}</Muted>
                   </Row>
                   {tampered ? (
@@ -255,14 +274,26 @@ export default function History() {
                 </Muted>
               ) : signWeek === ws ? (
                 <View style={{ gap: 8 }}>
-                  <Field label="서명(이름 입력)" value={sigText} onChangeText={setSigText} placeholder={s.user?.name} />
+                  <Muted size={12}>
+                    위 기간의 근무기록을 확인했음을 <Text style={{ fontWeight: '700', color: t.text }}>{s.user?.name}</Text> 본인 명의로 서명합니다.
+                    본인 확인을 위해 <Text style={{ fontWeight: '700', color: t.text }}>로그인 비밀번호</Text>를 입력해 주세요.
+                  </Muted>
+                  <Field
+                    label="비밀번호(본인 확인)"
+                    value={sigText}
+                    onChangeText={setSigText}
+                    placeholder="로그인 비밀번호"
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                  {signMsg ? <Muted size={12} style={{ color: t.danger }}>{signMsg}</Muted> : null}
                   <Row>
-                    <Button label="확인 서명" variant="primary" small style={{ flex: 1 }} onPress={() => submitSignature(ws, group.rows)} />
-                    <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => { setSignWeek(null); setSigText(''); }} />
+                    <Button label="확인 서명" variant="primary" small loading={signBusy} style={{ flex: 1 }} onPress={() => submitSignature(ws, group.rows)} />
+                    <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => { setSignWeek(null); setSigText(''); setSignMsg(''); }} />
                   </Row>
                 </View>
               ) : (
-                <Button label="주간 확인·서명" variant="outline" small onPress={() => { setSignWeek(ws); setSigText(s.user?.name || ''); }} />
+                <Button label="주간 확인·서명" variant="outline" small onPress={() => { setSignWeek(ws); setSigText(''); setSignMsg(''); }} />
               )}
             </View>
           );

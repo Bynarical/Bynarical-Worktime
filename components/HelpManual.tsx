@@ -118,7 +118,8 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
 
             <Card style={{ borderColor: t.success, borderWidth: 1 }}>
               <Section emoji="✍️" title="주간 확인·서명 & 내 기록 잠금 (이력 탭)">
-                <Step><Text style={{ fontWeight: '700' }}>이미 지난 주</Text>의 근무기록을 확인하고 <Text style={{ fontWeight: '700' }}>이름으로 서명</Text>하세요. 진행 중인 <Text style={{ fontWeight: '700' }}>이번 주는 주가 끝난 뒤</Text>에 서명할 수 있습니다.</Step>
+                <Step><Text style={{ fontWeight: '700' }}>이미 지난 주</Text>의 근무기록을 확인하고 <Text style={{ fontWeight: '700' }}>로그인 비밀번호를 입력해 서명</Text>하세요(본인 확인). 진행 중인 <Text style={{ fontWeight: '700' }}>이번 주는 주가 끝난 뒤</Text>에 서명할 수 있습니다.</Step>
+                <Step>매주 월요일 출퇴근 화면에서 <Text style={{ fontWeight: '700' }}>서명 안 한 주가 있으면 알림 팝업</Text>이 뜹니다.</Step>
                 <Step>서명하면 그 주의 출퇴근·연차 기록이 <Text style={{ fontWeight: '700' }}>잠겨, 관리자도 임의로 수정할 수 없습니다.</Text> 한번 확정한 근태는 그대로 보존됩니다.</Step>
                 <Step>고칠 일이 생기면 <Text style={{ fontWeight: '700' }}>본인이 직접 '서명 해제'</Text>를 눌러야 다시 열립니다. (관리자는 해제할 수 없어요.)</Step>
                 <Step>시스템 기록을 기준으로 근로시간이 산정됩니다.</Step>
