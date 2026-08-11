@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import {
   Screen,
@@ -16,8 +16,17 @@ import {
 import { useStore } from '@/lib/store';
 import { getCurrentPoint, parseCoords, resolveMapLink, looksLikeMapLink } from '@/lib/geo';
 import { timeHM, hmToMinutes, minutesToHM, dateKey } from '@/lib/time';
-import { GeoPoint } from '@/lib/types';
+import { GeoPoint, Workplace } from '@/lib/types';
 import { SUBWAY_AUTO_REFRESH_MS } from '@/lib/config';
+import {
+  BusStop,
+  ArrivalsResult,
+  fetchNearbyStops,
+  fetchArrivals,
+  useBusFavorites,
+  etaLabel,
+  routeTypeShort,
+} from '@/lib/bus';
 import {
   SubwayStation,
   NearbyStation,
@@ -127,14 +136,221 @@ export default function Commute() {
 
       {selected && <TimetableCard station={selected} onClose={() => setSelected(null)} fav={fav} />}
 
+      <Divider />
+
+      {/* 버스 — 근처 정류소 실시간 도착 */}
+      <BusSection home={home} workplace={workplace} />
+
       <Card>
         <Muted size={11}>
           역 위치는 앱 내장 전국 도시철도 데이터를 사용합니다. 시간표·방면(종점)은 국토교통부(TAGO) 공공데이터를 조회하며,
           지방 일부 노선은 제공되지 않을 수 있습니다. 시간표는 기기에 캐시되어 다음부터 빠르게 열리고 오래되면 자동 갱신됩니다.
           ※ 급행/완행 구분은 TAGO에서 제공하지 않아 표시할 수 없습니다. 집 위치·즐겨찾기는 이 기기에만 저장됩니다.
+          {'\n'}버스는 TAGO 실시간 도착정보를 사용합니다. 경기·광역시 등은 전부 제공되지만 <Text style={{ fontWeight: '700' }}>서울 시내버스(간선·지선·마을)는 제공되지 않습니다</Text> — 서울 안에서는 그곳을 지나는 경기·인천 광역버스만 표시됩니다.
         </Muted>
       </Card>
     </Screen>
+  );
+}
+
+// ───────────────────────── 버스 ─────────────────────────
+// 집/직장 근처 정류소를 찾아 실시간 도착정보를 보여준다. 정류소는 캐시(7일), 도착은 실시간.
+function BusSection({ home, workplace }: { home: GeoPoint | null; workplace: Workplace | null }) {
+  const t = useTheme();
+  const busFav = useBusFavorites();
+  const [where, setWhere] = useState<'home' | 'work'>('home');
+  const [stops, setStops] = useState<BusStop[]>([]);
+  const [msg, setMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [openStop, setOpenStop] = useState<BusStop | null>(null);
+
+  const point: GeoPoint | null =
+    where === 'home' ? home : workplace ? { lat: workplace.lat, lng: workplace.lng } : null;
+
+  useEffect(() => {
+    let alive = true;
+    if (!point) {
+      setStops([]);
+      setMsg(where === 'home' ? '먼저 위에서 집 위치를 등록하세요.' : '등록된 근무지가 없습니다.');
+      return;
+    }
+    setLoading(true);
+    setMsg('');
+    fetchNearbyStops(point).then((r) => {
+      if (!alive) return;
+      setLoading(false);
+      if (!r.ok) {
+        setStops([]);
+        setMsg(r.error || '정류소를 불러오지 못했습니다.');
+        return;
+      }
+      setStops(r.stops || []);
+      if (!(r.stops || []).length) {
+        setMsg('이 위치의 정류소 정보가 없습니다. (서울시는 TAGO에서 제공되지 않습니다)');
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [point?.lat, point?.lng, where]);
+
+  return (
+    <>
+      <Card>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <Row style={{ gap: 8 }}>
+            <Text style={{ fontSize: 16 }}>🚌</Text>
+            <Text style={{ fontWeight: '800', color: t.text, fontSize: 15 }}>버스 실시간 도착</Text>
+          </Row>
+          <Row style={{ gap: 6 }}>
+            <Chip label="집" active={where === 'home'} onPress={() => setWhere('home')} small />
+            <Chip label="직장" active={where === 'work'} onPress={() => setWhere('work')} small />
+          </Row>
+        </Row>
+
+        {busFav.favorites.length > 0 && (
+          <View style={{ gap: 6 }}>
+            <Muted size={11}>⭐ 자주 타는 정류소</Muted>
+            {busFav.favorites.map((st) => (
+              <BusStopRow key={st.nodeId} stop={st} fav={busFav} onOpen={() => setOpenStop(st)} showStar />
+            ))}
+            <Divider />
+          </View>
+        )}
+
+        {loading ? (
+          <Muted size={12}>정류소 찾는 중...</Muted>
+        ) : msg ? (
+          <Muted size={12} style={{ color: stops.length ? t.textDim : t.danger }}>{msg}</Muted>
+        ) : null}
+
+        {stops.slice(0, 6).map((st) => (
+          <BusStopRow key={st.nodeId} stop={st} fav={busFav} onOpen={() => setOpenStop(st)} />
+        ))}
+        {stops.length > 0 && <Muted size={11}>정류소를 누르면 실시간 도착정보를 봅니다. ☆를 누르면 자주 타는 정류소로 저장됩니다.</Muted>}
+      </Card>
+
+      {openStop && <BusArrivalsCard stop={openStop} onClose={() => setOpenStop(null)} fav={busFav} />}
+    </>
+  );
+}
+
+function BusStopRow({
+  stop,
+  fav,
+  onOpen,
+  showStar,
+}: {
+  stop: BusStop;
+  fav: ReturnType<typeof useBusFavorites>;
+  onOpen: () => void;
+  showStar?: boolean;
+}) {
+  const t = useTheme();
+  return (
+    <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+      <Pressable style={{ flex: 1 }} onPress={onOpen}>
+        <Row style={{ gap: 6, alignItems: 'center' }}>
+          <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>{stop.name}</Text>
+          {stop.no ? <Muted size={11}>{stop.no}</Muted> : null}
+          {stop.distance != null ? <Muted size={11}>· {stop.distance}m</Muted> : null}
+          <Text style={{ color: t.primary, fontSize: 12 }}>보기 ›</Text>
+        </Row>
+      </Pressable>
+      <FavStar active={showStar ? true : fav.isFavorite(stop.nodeId)} onPress={() => fav.toggleFavorite(stop)} />
+    </Row>
+  );
+}
+
+// 정류소 실시간 도착 목록. 30초마다 자동 갱신 + 수동 새로고침.
+function BusArrivalsCard({
+  stop,
+  onClose,
+  fav,
+}: {
+  stop: BusStop;
+  onClose: () => void;
+  fav: ReturnType<typeof useBusFavorites>;
+}) {
+  const t = useTheme();
+  const [res, setRes] = useState<ArrivalsResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(
+    async (force: boolean) => {
+      setBusy(true);
+      const r = await fetchArrivals(stop, { force });
+      setRes(r);
+      setBusy(false);
+    },
+    [stop.nodeId, stop.cityCode]
+  );
+
+  useEffect(() => {
+    let alive = true;
+    setRes(null);
+    load(true);
+    const id = setInterval(() => {
+      if (alive) load(true);
+    }, 30000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stop.nodeId]);
+
+  const arrivals = res?.arrivals || [];
+
+  return (
+    <Card style={{ borderColor: t.primary, borderWidth: 1.5 }}>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <Row style={{ gap: 8, alignItems: 'center' }}>
+          <Text style={{ fontSize: 16 }}>🚏</Text>
+          <View>
+            <Text style={{ fontWeight: '800', color: t.text, fontSize: 16 }}>{stop.name}</Text>
+            <Muted size={11}>{stop.no ? `정류소 ${stop.no}` : ''}{stop.distance != null ? ` · ${stop.distance}m` : ''}</Muted>
+          </View>
+        </Row>
+        <Row style={{ gap: 12, alignItems: 'center' }}>
+          <FavStar active={fav.isFavorite(stop.nodeId)} onPress={() => fav.toggleFavorite(stop)} />
+          <Button label="닫기" variant="neutral" small onPress={onClose} />
+        </Row>
+      </Row>
+
+      <Divider />
+
+      <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <Muted size={11}>{res?.at ? agoLabel(res.at) : ''} · 30초마다 자동 갱신</Muted>
+        <Button label="새로고침" icon="🔄" variant="outline" small loading={busy} onPress={() => load(true)} />
+      </Row>
+
+      {!res ? (
+        <Muted size={12}>도착정보 불러오는 중...</Muted>
+      ) : !res.ok ? (
+        <Muted size={12} style={{ color: t.danger }}>{res.error}</Muted>
+      ) : arrivals.length === 0 ? (
+        <Muted size={12}>지금 도착 예정인 버스가 없습니다. (막차 이후이거나 운행 정보 없음)</Muted>
+      ) : (
+        arrivals.map((a, i) => (
+          <Row key={`${a.routeId}-${a.etaSec}-${i}`} style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <Row style={{ gap: 6, alignItems: 'center', flex: 1 }}>
+              <View style={{ backgroundColor: t.primarySoft, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                <Text style={{ color: t.primary, fontWeight: '800', fontSize: 14 }}>{a.routeNo}</Text>
+              </View>
+              <Muted size={11}>{routeTypeShort(a.routeType)}</Muted>
+              {/저상/.test(a.vehicleType) ? <Badge text="저상" color={t.success} soft={t.successSoft} /> : null}
+            </Row>
+            <Row style={{ gap: 8, alignItems: 'center' }}>
+              <Muted size={11}>{a.prevStops}정류소 전</Muted>
+              <Text style={{ color: a.etaSec <= 180 ? t.danger : t.text, fontWeight: '800', fontSize: 14 }}>
+                {etaLabel(a.etaSec)}
+              </Text>
+            </Row>
+          </Row>
+        ))
+      )}
+    </Card>
   );
 }
 

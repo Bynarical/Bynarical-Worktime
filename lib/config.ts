@@ -30,6 +30,8 @@ export const STORAGE_KEYS = {
   SUBWAY_IDS: 'att_subway_ids', // 역명→TAGO 역ID 캐시 { [normName]: {id,route}[] }
   SUBWAY_SCHED: 'att_subway_sched', // 시간표 캐시 접두사: `${SUBWAY_SCHED}_${stationId}_${daily}`
   SUBWAY_FAV: 'att_subway_fav', // 자주 타는 역 즐겨찾기 (SubwayStation[])
+  BUS_STOPS: 'att_bus_stops', // 좌표별 근처 정류소 캐시 접두사: `${BUS_STOPS}_${lat3}_${lng3}`
+  BUS_FAV: 'att_bus_fav', // 자주 타는 버스 정류소 즐겨찾기 (BusStop[])
   ASSURANCE_SEEN: 'att_assurance_seen', // 직원 안심 팝업 공지 확인 여부(공지 id 저장, 기기별 1회)
   UNSYNCED_RECORDS: 'att_unsynced_records', // 서버 저장 실패한 근태 기록(오프라인/네트워크 오류) 재전송 대기열
   SIGN_REMIND_SEEN: 'att_sign_remind_seen', // 주간 서명 리마인드 팝업을 띄운 주(월요일 키) — 주 1회만 노출
