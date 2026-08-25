@@ -71,7 +71,7 @@ function ProfileCard() {
 
   return (
     <Card>
-      <Row><Badge text="프로필" color={t.primary} />{s.user?.isAdmin && <Badge text="관리자 계정" color={t.trip} />}</Row>
+      <Row><Badge text="프로필" color={t.primary} />{s.user?.isAdmin && <Badge text="관리자 계정" color={t.primary} />}</Row>
       <KV k="이름" v={s.user?.name || '-'} />
       <KV k="사번" v={s.user?.empNo || '미등록'} vColor={s.user?.empNo ? undefined : t.textFaint} />
       <KV k="입사일 (연차 계산)" v={s.user?.hireDate || '미등록 · 관리자 설정'} vColor={s.user?.hireDate ? undefined : t.textFaint} />
@@ -206,7 +206,7 @@ function AdminUnlocked() {
 
   return (
     <Card>
-      <Row><Badge text="관리자" color={t.trip} /><Text style={{ fontWeight: '800', color: t.text }}>근무·연차 정책</Text></Row>
+      <Row><Badge text="관리자" color={t.primary} /><Text style={{ fontWeight: '800', color: t.text }}>근무·연차 정책</Text></Row>
       <Muted size={12}>전 직원에게 공통 적용됩니다.</Muted>
 
       <Row><View style={{ flex: 1 }}><Field label="코어 시작" value={f.coreStart} onChangeText={set('coreStart')} /></View><View style={{ flex: 1 }}><Field label="코어 종료" value={f.coreEnd} onChangeText={set('coreEnd')} /></View></Row>

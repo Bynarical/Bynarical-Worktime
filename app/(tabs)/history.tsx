@@ -28,6 +28,8 @@ import {
 import { shortHash } from '@/lib/hash';
 import { weekSignState, weekContentHash, verifyConfirmation } from '@/lib/confirmation';
 import { toCsv, exportCsv } from '@/lib/csv';
+import { leaveCategoryLabel } from '@/lib/leave';
+import { labelColor, leaveStyle } from '@/lib/palette';
 import { AttendanceRecord } from '@/lib/types';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
 
@@ -140,7 +142,7 @@ export default function History() {
   }
 
   function onExport() {
-    const headers = ['날짜', '유형', '계획출근', '출근', '퇴근', '실근로(분)', '소정(분)', '연차(분)', '초과/부족(분)', '상태', '해시'];
+    const headers = ['날짜', '유형', '계획출근', '출근', '퇴근', '실근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '상태', '해시'];
     const rows = dayRows.map((r) => [
       r.date,
       r.rec?.type === 'TRIP' ? '출장' : '근무',
@@ -149,7 +151,9 @@ export default function History() {
       r.rec?.checkOut ? timeHM(Date.parse(r.rec.checkOut)) : '',
       Math.round(r.comp.workedMinutes),
       Math.round(r.comp.requiredMinutes),
-      Math.round(r.comp.leaveMinutes),
+      Math.round(r.comp.annualMinutes),
+      Math.round(r.comp.paidMinutes),
+      Math.round(r.comp.unpaidMinutes),
       Math.round(r.comp.diffMinutes),
       r.comp.labels.join(' '),
       shortHash(r.rec?.hash),
@@ -184,7 +188,16 @@ export default function History() {
           />
         </Row>
         <Row style={{ gap: 8 }}>
-          <StatTile onHero label="연차" value={`${summary.leaveMinutes / 60}h`} />
+          <StatTile
+            onHero
+            label="연차"
+            value={`${summary.annualMinutes / 60}h`}
+            sub={
+              [summary.paidMinutes > 0 ? `유급 ${summary.paidMinutes / 60}h` : '', summary.unpaidMinutes > 0 ? `무급 ${summary.unpaidMinutes / 60}h` : '']
+                .filter(Boolean)
+                .join(' · ') || undefined
+            }
+          />
           <StatTile onHero label="지각" value={`${summary.lateCount}회`} />
           <StatTile onHero label="코어위반" value={`${summary.coreViolationCount}회`} />
         </Row>
@@ -332,7 +345,11 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
       <Row style={{ justifyContent: 'space-between' }}>
         <Body style={{ fontWeight: '700' }}>{date} ({wd})</Body>
         {comp.isFullLeave ? (
-          <Badge text={comp.isPaidLeave ? '종일 유급휴가' : '종일 연차'} color={comp.isPaidLeave ? t.success : t.trip} />
+          <Badge
+            text={`종일 ${leaveCategoryLabel(comp.leaveCategory ?? undefined)}`}
+            color={leaveStyle(t, comp.leaveCategory).color}
+            soft={leaveStyle(t, comp.leaveCategory).soft}
+          />
         ) : (
           <Muted>{rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '--:--'} → {rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '--:--'}</Muted>
         )}
@@ -348,7 +365,7 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
       {comp.labels.length > 0 && (
         <Row style={{ flexWrap: 'wrap' }}>
           {comp.labels.map((l) => (
-            <Badge key={l} text={l} color={/부족|미충족|지각|미기록|오류/.test(l) ? t.danger : /유급/.test(l) ? t.success : /연차|출장/.test(l) ? t.trip : t.textDim} />
+            <Badge key={l} text={l} color={labelColor(t, l)} />
           ))}
         </Row>
       )}

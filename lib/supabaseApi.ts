@@ -100,7 +100,7 @@ function leaveFromRow(row: any): LeaveRequest {
     date: row.date,
     hours: row.hours,
     segment: row.segment,
-    category: row.category === 'PAID' ? 'PAID' : 'ANNUAL',
+    category: row.category === 'PAID' ? 'PAID' : row.category === 'UNPAID' ? 'UNPAID' : 'ANNUAL',
     startTime: row.start_time || undefined,
     endTime: row.end_time || undefined,
     reason: row.reason || undefined,

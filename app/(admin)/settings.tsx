@@ -99,7 +99,7 @@ function PolicyCard() {
 
   return (
     <Card>
-      <Row><Badge text="근무·연차 정책" color={t.trip} /></Row>
+      <Row><Badge text="근무·연차 정책" color={t.primary} /></Row>
       <Muted size={12}>전 직원에게 공통 적용됩니다.</Muted>
 
       <Row><View style={{ flex: 1 }}><Field label="코어 시작" value={f.coreStart} onChangeText={set('coreStart')} /></View><View style={{ flex: 1 }}><Field label="코어 종료" value={f.coreEnd} onChangeText={set('coreEnd')} /></View></Row>
@@ -187,7 +187,7 @@ function HolidaysCard() {
   return (
     <Card>
       <Row style={{ justifyContent: 'space-between' }}>
-        <Row><Badge text="공휴일 / 휴무일" color={t.trip} /></Row>
+        <Row><Badge text="공휴일 / 휴무일" color={t.primary} /></Row>
         <Badge text={`${s.holidays.length}일`} color={t.textDim} />
       </Row>
       <Muted size={12}>연차 80% 출근율 계산 시 소정근로일에서 제외됩니다. 주말은 자동 제외되므로 평일 공휴일·대체공휴일·회사 휴무일만 관리하면 됩니다.</Muted>

@@ -17,15 +17,16 @@ import {
 import { useStore, isActiveEmployee, isTestAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { dateKey, minutesToHM, minutesToKor, minutesOfDay } from '@/lib/time';
-import { hoursToDayLabel } from '@/lib/leave';
+import { hoursToDayLabel, leaveCategoryLabel } from '@/lib/leave';
+import { leaveStyle } from '@/lib/palette';
 import { buildEmployeeOverview, EmployeeOverview, OverviewInput, TodayStatus } from '@/lib/adminOverview';
 import { computeAttendanceScore } from '@/lib/attendanceScore';
 import { AttendanceScoreCard, gradeColor } from '@/components/AttendanceScoreCard';
 
-const STATUS_META: Record<TodayStatus, { label: string; tone: 'primary' | 'success' | 'trip' | 'faint' }> = {
+const STATUS_META: Record<TodayStatus, { label: string; tone: 'primary' | 'success' | 'leave' | 'faint' }> = {
   WORKING: { label: '근무 중', tone: 'primary' },
   DONE: { label: '퇴근', tone: 'success' },
-  LEAVE: { label: '연차', tone: 'trip' },
+  LEAVE: { label: '휴가', tone: 'leave' }, // 실제 라벨은 휴가 종류로 대체
   ABSENT: { label: '미출근', tone: 'faint' },
 };
 
@@ -131,7 +132,7 @@ export default function AdminDashboard() {
           </Row>
           <Row style={{ flexWrap: 'wrap', gap: 6 }}>
             {pendingRecCount > 0 && <Badge text={`근무지밖 출근 ${pendingRecCount}건`} color={t.danger} />}
-            {pending.length > 0 && <Badge text={`연차 승인 ${pending.length}건`} color={t.warning} />}
+            {pending.length > 0 && <Badge text={`휴가 승인 ${pending.length}건`} color={t.warning} />}
             {anomalyStaff > 0 && <Badge text={`이상징후 ${anomalyStaff}명`} color={t.danger} />}
             {unsignedStaff > 0 && <Badge text={`미서명 ${unsignedStaff}명`} color={t.textDim} />}
             {missingHire > 0 && <Badge text={`입사일 미등록 ${missingHire}명`} color={t.warning} />}
@@ -220,7 +221,10 @@ export default function AdminDashboard() {
 function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded: boolean; onToggle: () => void }) {
   const t = useTheme();
   const meta = STATUS_META[o.today.status];
-  const toneColor = meta.tone === 'primary' ? t.primary : meta.tone === 'success' ? t.success : meta.tone === 'trip' ? t.trip : t.textFaint;
+  const leaveSt = leaveStyle(t, o.today.leaveCategory);
+  const statusLabel = meta.tone === 'leave' ? leaveCategoryLabel(o.today.leaveCategory ?? undefined) : meta.label;
+  const toneColor =
+    meta.tone === 'primary' ? t.primary : meta.tone === 'success' ? t.success : meta.tone === 'leave' ? leaveSt.color : t.textFaint;
   const inHM = o.today.checkInMin != null ? minutesToHM(o.today.checkInMin) : '--:--';
   const outHM = o.today.checkOutMin != null ? minutesToHM(o.today.checkOutMin) : (o.today.status === 'WORKING' ? '근무 중' : '--:--');
   const shortfallDays = o.month.shortfallDays;
@@ -232,10 +236,10 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           <Row style={{ gap: 6, alignItems: 'center', flexShrink: 1 }}>
             <Body style={{ fontWeight: '800' }}>{o.name}</Body>
             {o.empNo ? <Muted size={12}>({o.empNo})</Muted> : null}
-            {o.isAdmin ? <Badge text="관리자" color={t.trip} /> : null}
+            {o.isAdmin ? <Badge text="관리자" color={t.primary} /> : null}
             {o.hasWarning ? <Text style={{ color: t.danger }}>●</Text> : null}
           </Row>
-          <Badge text={meta.label} color={toneColor} />
+          <Badge text={statusLabel} color={toneColor} soft={meta.tone === 'leave' ? leaveSt.soft : undefined} />
         </Row>
       </Pressable>
 
@@ -257,7 +261,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           <Metric
             label="연차 잔여"
             value={o.balance ? hoursToDayLabel(o.balance.availableNowHours) : '미산정'}
-            color={o.balance ? (o.balance.availableNowHours < 0 ? t.danger : t.trip) : t.textFaint}
+            color={o.balance ? (o.balance.availableNowHours < 0 ? t.danger : t.leaveAnnual) : t.textFaint}
           />
         )}
       </Row>
@@ -267,7 +271,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
         <Row style={{ flexWrap: 'wrap', gap: 6 }}>
           {o.anomalyDays > 0 && <Badge text={`이상 ${o.anomalyDays}일`} color={t.danger} />}
           {o.unsignedWeeks > 0 && <Badge text={`미서명 ${o.unsignedWeeks}주`} color={t.textDim} />}
-          {o.pendingLeaveCount > 0 && <Badge text={`연차대기 ${o.pendingLeaveCount}건`} color={t.warning} />}
+          {o.pendingLeaveCount > 0 && <Badge text={`휴가대기 ${o.pendingLeaveCount}건`} color={t.warning} />}
           {!o.isAdmin && !o.hireDate && <Badge text="입사일 미등록" color={t.warning} />}
         </Row>
       )}
@@ -289,7 +293,11 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           <KV k="조기퇴근" v={`${o.month.earlyLeaveCount}회`} />
           <KV k="퇴근 미기록" v={`${o.month.missingCount}회`} />
           <KV k="출장" v={`${o.month.tripCount}회`} />
-          {!o.isAdmin && <KV k="사용 연차(이번달)" v={`${o.month.leaveMinutes / 60}h`} />}
+          {!o.isAdmin && <KV k="사용 연차(이번달)" v={`${o.month.annualMinutes / 60}h`} />}
+          {o.month.paidMinutes > 0 && <KV k="유급휴가(이번달)" v={`${o.month.paidMinutes / 60}h`} />}
+          {o.month.unpaidMinutes > 0 && (
+            <KV k="무급휴가(이번달)" v={`${o.month.unpaidMinutes / 60}h · 종일 ${o.month.unpaidFullDays}일`} />
+          )}
           <KV k="미서명 주" v={o.unsignedWeeks > 0 ? `${o.unsignedWeeks}주` : '없음'} />
           <KV k="이번달 야근식대" v={`${o.mealDays}회`} />
           {o.balance && (

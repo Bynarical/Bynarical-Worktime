@@ -1,5 +1,5 @@
 // 연차 도메인 로직 — 반반차(2h 단위) + 근로기준법 기반 발생(근로계약서 제6조).
-import { LeavePolicy, LeaveRequest, LeaveUnit, User, LeaveAdjustment, AttendanceRecord, WorkPolicy } from './types';
+import { LeaveCategory, LeavePolicy, LeaveRequest, LeaveUnit, User, LeaveAdjustment, AttendanceRecord, WorkPolicy } from './types';
 import { monthsSince, yearsSince, dateKey, addYearsKey, addDaysKey } from './time';
 import { attendanceStat, perfectMonths } from './attendanceRate';
 
@@ -207,7 +207,7 @@ export function computeLeaveYears(
   out.forEach((b) => (map[b.key] = b));
   for (const l of mine) {
     if (l.status !== 'APPROVED' && l.status !== 'REQUESTED') continue;
-    if (l.category === 'PAID') continue; // 유급휴가는 연차 잔여에서 차감하지 않음
+    if (!deductsBalance(l.category)) continue; // 유급·무급휴가는 연차 잔여에서 차감하지 않음
     if (l.date < hire) continue;
     const key = l.date < y1Expiry ? 'monthly' : 'y' + yearsSince(hire, l.date);
     const b = map[key];
@@ -264,7 +264,7 @@ export interface ValidationResult {
 // 신청 검증: (1) 단위 유효, (2) 발생 범위 내(선사용 금지)
 export function validateRequest(
   user: User,
-  req: { date: string; hours: LeaveUnit; category?: 'ANNUAL' | 'PAID' },
+  req: { date: string; hours: LeaveUnit; category?: LeaveCategory },
   leaves: LeaveRequest[],
   adjustments: LeaveAdjustment[],
   policy: LeavePolicy,
@@ -274,8 +274,8 @@ export function validateRequest(
     return { ok: false, reason: '사용 단위는 2/4/6/8시간만 가능합니다.' };
   }
 
-  // 유급휴가(예비군·공가 등)는 연차를 차감하지 않으므로 잔여 검증을 하지 않는다.
-  if (req.category === 'PAID') return { ok: true };
+  // 유급휴가(예비군·공가 등)·무급휴가는 연차를 차감하지 않으므로 잔여 검증을 하지 않는다.
+  if (!deductsBalance(req.category)) return { ok: true };
 
   // 신청일(req.date) 시점 기준 발생분으로 판단 (제6조 5항: 미발생 연차 선사용 불가)
   const balAtDate = computeBalance(user, leaves, adjustments, policy, req.date, ctx);
@@ -299,6 +299,38 @@ export function hoursToDayLabel(hours: number, fullDay = 8): string {
   if (d > 0) parts.push(`${d}일`);
   if (h > 0 || d === 0) parts.push(`${h}시간`);
   return (neg ? '-' : '') + parts.join(' ');
+}
+
+// 휴가 카테고리 표기 — 화면 문구는 전부 여기서 가져온다.
+export const LEAVE_CATEGORY_LABELS: Record<LeaveCategory, string> = {
+  ANNUAL: '연차',
+  PAID: '유급휴가',
+  UNPAID: '무급휴가',
+};
+export const LEAVE_CATEGORY_ICONS: Record<LeaveCategory, string> = {
+  ANNUAL: '🌴',
+  PAID: '🎖️',
+  UNPAID: '🪫',
+};
+export const LEAVE_CATEGORY_NOTES: Record<LeaveCategory, string> = {
+  ANNUAL: '연차: 2시간 단위(2/4/6/8h) 분할 사용, 사용한 시간만큼 잔여에서 차감됩니다.',
+  PAID: '유급휴가(예비군·공가·경조사·병가 등)는 연차 잔여에서 차감되지 않고 급여도 지급됩니다.',
+  UNPAID: '무급휴가는 연차 잔여에서 차감되지 않지만 그 시간만큼 급여가 지급되지 않습니다. 연차 잔여가 없거나 개인 사정으로 더 쉬어야 할 때 사용합니다.',
+};
+
+export function leaveCategoryOf(l: { category?: LeaveCategory }): LeaveCategory {
+  return l.category ?? 'ANNUAL';
+}
+export function leaveCategoryLabel(c?: LeaveCategory): string {
+  return LEAVE_CATEGORY_LABELS[c ?? 'ANNUAL'];
+}
+// 연차 잔여를 차감하는 카테고리인가 (연차만 차감)
+export function deductsBalance(c?: LeaveCategory): boolean {
+  return (c ?? 'ANNUAL') === 'ANNUAL';
+}
+// 종일 무급휴가인가 — 연차 발생 80% 판정 시 소정근로일수에서 제외 대상
+export function isFullDayUnpaid(l: LeaveRequest, fullDayHours = 8): boolean {
+  return l.category === 'UNPAID' && (l.segment === 'FULL' || l.hours >= fullDayHours);
 }
 
 export const SEGMENT_LABELS: Record<string, string> = {

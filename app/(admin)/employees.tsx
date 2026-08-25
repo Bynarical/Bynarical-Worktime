@@ -159,7 +159,7 @@ export default function Employees() {
                 {!e.hireDate ? (
                   <Badge text="입사일 미등록" color={t.warning} />
                 ) : (
-                  <Text style={{ fontWeight: '800', color: b && b.availableNowHours < 0 ? t.danger : t.trip }}>
+                  <Text style={{ fontWeight: '800', color: b && b.availableNowHours < 0 ? t.danger : t.leaveAnnual }}>
                     {b ? `${hoursToDayLabel(b.availableNowHours, leavePolicy.fullDayHours)} (${b.availableNowHours}h)` : '-'}
                   </Text>
                 )}
@@ -218,7 +218,7 @@ export default function Employees() {
               </View>
               <Switch
                 value={!!s.profilesById[adjUser]?.isAdmin}
-                color={t.trip}
+                color={t.primary}
                 onValueChange={(v) => {
                   if (adjUser === s.user?.id) { setInfoMsg('본인 관리자 권한은 해제할 수 없습니다.'); return; }
                   s.adminUpdateProfile(adjUser, { isAdmin: v });
@@ -233,7 +233,7 @@ export default function Employees() {
               return b ? (
                 <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <Body style={{ fontWeight: '600' }}>현재 잔여 연차</Body>
-                  <Text style={{ fontWeight: '800', color: b.availableNowHours < 0 ? t.danger : t.trip }}>
+                  <Text style={{ fontWeight: '800', color: b.availableNowHours < 0 ? t.danger : t.leaveAnnual }}>
                     {hoursToDayLabel(b.availableNowHours, leavePolicy.fullDayHours)} ({b.availableNowHours}h)
                   </Text>
                 </Row>
@@ -241,7 +241,7 @@ export default function Employees() {
             })()}
             <Row style={{ alignItems: 'flex-end' }}>
               <View style={{ flex: 1 }}><Field label="연차 조정(h) · 양수=부여, 음수=차감" value={adjHours} onChangeText={setAdjHours} placeholder="예: 8 또는 -2" keyboardType="numbers-and-punctuation" /></View>
-              <Button label="조정" variant="trip" small onPress={grant} />
+              <Button label="조정" variant="annual" small onPress={grant} />
             </Row>
             {adjMsg ? <Muted size={12}>{adjMsg}</Muted> : null}
             {(() => {
@@ -250,6 +250,7 @@ export default function Employees() {
                 <LeaveYearBreakdown buckets={b.buckets} fullDay={leavePolicy.fullDayHours} title="연차 연도별 내역" />
               ) : null;
             })()}
+            <SpecialLeaveCard userId={adjUser} />
             <Divider />
             <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
@@ -304,5 +305,49 @@ export default function Employees() {
         {archiveMsg ? <Muted size={12} style={{ color: archiveMsg.startsWith('✓') ? t.success : t.danger }}>{archiveMsg}</Muted> : null}
       </Card>
     </Screen>
+  );
+}
+
+// 유급·무급휴가는 연차 잔여에서 차감되지 않아 위 연차 내역에 안 나온다 → 연도별로 따로 집계.
+function SpecialLeaveCard({ userId }: { userId: string }) {
+  const s = useStore();
+  const t = useTheme();
+  const fullDay = s.settings.leavePolicy.fullDayHours;
+  const rows = useMemo(() => {
+    const mine = s.leaves.filter((l) => l.userId === userId && l.status === 'APPROVED' && l.category && l.category !== 'ANNUAL');
+    const byYear = new Map<string, { paid: number; unpaid: number }>();
+    mine.forEach((l) => {
+      const y = l.date.slice(0, 4);
+      const cur = byYear.get(y) || { paid: 0, unpaid: 0 };
+      if (l.category === 'PAID') cur.paid += l.hours;
+      else cur.unpaid += l.hours;
+      byYear.set(y, cur);
+    });
+    return [...byYear.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [s.leaves, userId]);
+  const pending = s.leaves.filter((l) => l.userId === userId && l.status === 'REQUESTED' && l.category && l.category !== 'ANNUAL');
+
+  return (
+    <Card>
+      <Text style={{ fontWeight: '700', color: t.text }}>특별휴가 내역 (유급 · 무급)</Text>
+      <Muted size={12}>연차 잔여에서 차감되지 않는 휴가입니다. 무급휴가는 그 시간만큼 급여에서 제외하세요.</Muted>
+      {rows.length === 0 ? (
+        <Muted size={12}>승인된 유급·무급휴가가 없습니다.</Muted>
+      ) : (
+        rows.map(([year, v]) => (
+          <View key={year} style={{ gap: 4 }}>
+            <Divider />
+            <Body style={{ fontWeight: '700' }}>{year}년</Body>
+            <Row style={{ gap: 8 }}>
+              <StatTile label="🎖️ 유급휴가" value={hoursToDayLabel(v.paid, fullDay)} sub={`${v.paid}h`} color={t.leavePaid} />
+              <StatTile label="🪫 무급휴가" value={hoursToDayLabel(v.unpaid, fullDay)} sub={`${v.unpaid}h · 급여 제외`} color={t.leaveUnpaid} />
+            </Row>
+          </View>
+        ))
+      )}
+      {pending.length > 0 ? (
+        <Muted size={11} style={{ color: t.warning }}>승인 대기 {pending.length}건 — [승인] 탭에서 처리하세요.</Muted>
+      ) : null}
+    </Card>
   );
 }

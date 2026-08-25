@@ -57,8 +57,12 @@ export interface AttendanceRecord {
 // ---- 연차/휴가 ----
 export type LeaveUnit = 2 | 4 | 6 | 8; // 사용 단위(시간): 반반차 2h ~ 종일 8h
 export type LeaveSegment = 'FULL' | 'AM' | 'PM' | 'CUSTOM';
-// 연차 카테고리: ANNUAL=연차(잔여 차감) / PAID=유급휴가(예비군·공가·경조사 등, 연차 미차감)
-export type LeaveCategory = 'ANNUAL' | 'PAID';
+// 휴가 카테고리
+//  ANNUAL=연차(잔여 차감)
+//  PAID  =유급휴가(예비군·공가·경조사 등) — 연차 미차감, 급여 지급
+//  UNPAID=무급휴가 — 연차 미차감, 급여 미지급. 그날 소정근로가 줄고(부족 감점 없음),
+//         종일 무급휴가는 연차 발생 80% 판정의 소정근로일수에서 제외한다(고용노동부 지침).
+export type LeaveCategory = 'ANNUAL' | 'PAID' | 'UNPAID';
 export type LeaveStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
 
 export interface LeaveRequest {
@@ -69,7 +73,7 @@ export interface LeaveRequest {
   date: string; // YYYY-MM-DD
   hours: LeaveUnit; // 차감 시간(2/4/6/8)
   segment: LeaveSegment; // FULL=종일, AM=오전(늦게출근), PM=오후(일찍퇴근), CUSTOM=직접지정
-  category?: LeaveCategory; // 미지정=ANNUAL(연차). PAID=유급휴가(연차 미차감)
+  category?: LeaveCategory; // 미지정=ANNUAL(연차). PAID=유급휴가, UNPAID=무급휴가(둘 다 연차 미차감)
   startTime?: string; // 휴가 구간 시작 "HH:MM"
   endTime?: string; // 휴가 구간 종료 "HH:MM"
   reason?: string;

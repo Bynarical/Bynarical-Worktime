@@ -42,7 +42,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: '출퇴근', tabBarIcon: ({ focused }) => <Icon emoji="🕒" focused={focused} /> }} />
       <Tabs.Screen name="history" options={{ title: '이력', tabBarIcon: ({ focused }) => <Icon emoji="📊" focused={focused} /> }} />
-      <Tabs.Screen name="leave" options={{ title: '연차', tabBarIcon: ({ focused }) => <Icon emoji="🌴" focused={focused} /> }} />
+      <Tabs.Screen name="leave" options={{ title: '휴가', tabBarIcon: ({ focused }) => <Icon emoji="🌴" focused={focused} /> }} />
       <Tabs.Screen name="commute" options={{ title: '통근', tabBarIcon: ({ focused }) => <Icon emoji="🚇" focused={focused} /> }} />
       <Tabs.Screen name="settings" options={{ title: '설정', tabBarIcon: ({ focused }) => <Icon emoji="⚙️" focused={focused} /> }} />
     </Tabs>

@@ -1,5 +1,5 @@
 // 관리자 종합 현황: 직원 1명의 연차·근태·서명·이상징후를 한 번에 계산.
-import { AttendanceRecord, LeaveRequest, LeaveAdjustment, Confirmation, WorkPolicy, LeavePolicy, User, MealAllowance } from './types';
+import { AttendanceRecord, LeaveRequest, LeaveAdjustment, Confirmation, WorkPolicy, LeavePolicy, User, MealAllowance, LeaveCategory } from './types';
 import { computeDay, summarize, PeriodSummary } from './attendance';
 import { computeBalance, LeaveBalance } from './leave';
 import { weekStartKey } from './time';
@@ -19,6 +19,7 @@ export interface EmployeeOverview {
     checkInMin: number | null;
     checkOutMin: number | null;
     isFullLeave: boolean;
+    leaveCategory: LeaveCategory | null; // 오늘 휴가 종류(연차/유급/무급)
   };
   pendingLeaveCount: number;
   unsignedWeeks: number; // 기록이 있으나 서명 안 된 주 수
@@ -123,6 +124,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
       checkInMin: todayComp?.checkInMin ?? null,
       checkOutMin: todayComp?.checkOutMin ?? null,
       isFullLeave,
+      leaveCategory: todayComp?.leaveCategory ?? null,
     },
     pendingLeaveCount,
     unsignedWeeks,

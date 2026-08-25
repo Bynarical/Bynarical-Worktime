@@ -16,7 +16,8 @@ import {
 import { useStore, isActiveEmployee } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeDay, summarize, DayComputation } from '@/lib/attendance';
-import { SEGMENT_LABELS } from '@/lib/leave';
+import { SEGMENT_LABELS, LEAVE_CATEGORY_ICONS, leaveCategoryLabel } from '@/lib/leave';
+import { labelColor, leaveStyle } from '@/lib/palette';
 import { dateKey, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
 import { confirmationCovering, verifyConfirmation } from '@/lib/confirmation';
@@ -87,7 +88,7 @@ export default function Approvals() {
   );
 
   function onExport() {
-    const headers = ['날짜', '유형', '계획출근', '출근', '퇴근', '실근로(분)', '소정(분)', '연차(분)', '초과/부족(분)', '상태', '해시'];
+    const headers = ['날짜', '유형', '계획출근', '출근', '퇴근', '실근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '상태', '해시'];
     const rows = dayRows.map((r) => [
       r.date,
       r.rec?.type === 'TRIP' ? '출장' : '근무',
@@ -96,7 +97,9 @@ export default function Approvals() {
       r.rec?.checkOut ? timeHM(Date.parse(r.rec.checkOut)) : '',
       Math.round(r.comp.workedMinutes),
       Math.round(r.comp.requiredMinutes),
-      Math.round(r.comp.leaveMinutes),
+      Math.round(r.comp.annualMinutes),
+      Math.round(r.comp.paidMinutes),
+      Math.round(r.comp.unpaidMinutes),
       Math.round(r.comp.diffMinutes),
       r.comp.labels.join(' '),
       shortHash(r.rec?.hash),
@@ -109,7 +112,7 @@ export default function Approvals() {
       <Hero style={{ paddingVertical: 22 }}>
         <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <View style={{ gap: 3 }}>
-            <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '600' }}>연차 승인 · 근태 조회</Text>
+            <Text style={{ color: t.onHeroDim, fontSize: 13, fontWeight: '600' }}>휴가 승인 · 근태 조회</Text>
             <Text style={{ color: '#fff', fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>승인 대기 {pending.length}건</Text>
           </View>
           <Badge text="✅ 승인" color="#fff" soft="rgba(255,255,255,0.2)" />
@@ -141,18 +144,25 @@ export default function Approvals() {
       )}
 
       {/* 승인 대기 */}
-      <Text style={{ fontWeight: '700', color: t.textDim }}>연차 승인 대기 ({pending.length})</Text>
+      <Text style={{ fontWeight: '700', color: t.textDim }}>휴가 승인 대기 ({pending.length})</Text>
       {pending.length === 0 && <Card><Muted>대기 중인 신청이 없습니다</Muted></Card>}
       {pending.map((l) => (
         <Card key={l.id}>
           <Row style={{ justifyContent: 'space-between' }}>
             <Row style={{ gap: 6 }}>
               <Body style={{ fontWeight: '700' }}>{l.userName} · {l.date}</Body>
-              <Badge text={l.category === 'PAID' ? '유급휴가' : '연차'} color={l.category === 'PAID' ? t.success : t.trip} />
+              <Badge
+                text={`${LEAVE_CATEGORY_ICONS[l.category ?? 'ANNUAL']} ${leaveCategoryLabel(l.category)}`}
+                color={leaveStyle(t, l.category).color}
+                soft={leaveStyle(t, l.category).soft}
+              />
             </Row>
-            <Badge text={`${l.hours}h`} color={t.trip} />
+            <Badge text={`${l.hours}h`} color={leaveStyle(t, l.category).color} />
           </Row>
           <Muted size={12}>{SEGMENT_LABELS[l.segment]}{l.segment === 'CUSTOM' && l.startTime ? ` ${l.startTime}~${l.endTime || ''}` : ''}{l.reason ? ` · ${l.reason}` : ''}</Muted>
+          {l.category === 'UNPAID' ? (
+            <Muted size={11} style={{ color: t.leaveUnpaid }}>무급휴가 — 연차 잔여 차감 없음 / 이 시간만큼 급여 미지급. 급여 계산에 반영하세요.</Muted>
+          ) : null}
           <Row>
             <Button label="승인" variant="success" small style={{ flex: 1 }} onPress={() => s.decideLeave(l.id, true)} />
             <Button label="반려" variant="danger" small style={{ flex: 1 }} onPress={() => s.decideLeave(l.id, false)} />
@@ -202,7 +212,16 @@ export default function Approvals() {
               />
             </Row>
             <Row style={{ gap: 8 }}>
-              <StatTile onHero label="연차" value={`${summary.leaveMinutes / 60}h`} />
+              <StatTile
+                onHero
+                label="연차"
+                value={`${summary.annualMinutes / 60}h`}
+                sub={
+                  [summary.paidMinutes > 0 ? `유급 ${summary.paidMinutes / 60}h` : '', summary.unpaidMinutes > 0 ? `무급 ${summary.unpaidMinutes / 60}h` : '']
+                    .filter(Boolean)
+                    .join(' · ') || undefined
+                }
+              />
               <StatTile onHero label="지각" value={`${summary.lateCount}회`} />
               <StatTile onHero label="코어위반" value={`${summary.coreViolationCount}회`} />
             </Row>
@@ -259,7 +278,11 @@ function DayCard({ date, rec, comp, locked, tampered, onEdit }: { date: string; 
           {tampered ? <Badge text="⚠ 서명 후 변경됨" color={t.danger} soft={t.dangerSoft} /> : locked ? <Badge text="🔒 확정" color={t.textDim} /> : null}
         </Row>
         {comp.isFullLeave ? (
-          <Badge text={comp.isPaidLeave ? '종일 유급휴가' : '종일 연차'} color={comp.isPaidLeave ? t.success : t.trip} />
+          <Badge
+            text={`종일 ${leaveCategoryLabel(comp.leaveCategory ?? undefined)}`}
+            color={leaveStyle(t, comp.leaveCategory).color}
+            soft={leaveStyle(t, comp.leaveCategory).soft}
+          />
         ) : (
           <Muted>{rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '--:--'} → {rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '--:--'}</Muted>
         )}
@@ -275,7 +298,7 @@ function DayCard({ date, rec, comp, locked, tampered, onEdit }: { date: string; 
       {comp.labels.length > 0 && (
         <Row style={{ flexWrap: 'wrap' }}>
           {comp.labels.map((l) => (
-            <Badge key={l} text={l} color={/부족|미충족|지각|미기록|오류/.test(l) ? t.danger : /유급/.test(l) ? t.success : /연차|출장/.test(l) ? t.trip : t.textDim} />
+            <Badge key={l} text={l} color={labelColor(t, l)} />
           ))}
         </Row>
       )}

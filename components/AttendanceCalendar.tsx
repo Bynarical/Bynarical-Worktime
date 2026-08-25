@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { Card, Muted, Body, Badge, Row, Divider, Button } from '@/components/ui';
+import { Card, Muted, Body, Badge, Row, Divider, Button, Marker } from '@/components/ui';
 import { useTheme } from '@/lib/theme';
 import { computeDay, DayComputation, isNormalWorkday } from '@/lib/attendance';
 import { dateKey, minutesOfDay, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
+import { leaveCategoryLabel } from '@/lib/leave';
+import { labelColor, leaveStyle, tone } from '@/lib/palette';
 import { AttendanceRecord, LeaveRequest, WorkPolicy, Holiday } from '@/lib/types';
 
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
@@ -101,6 +103,18 @@ export function AttendanceCalendar({
   const normalDays = cells.filter((c) => isNormalWorkday(c.comp)).length;
   const workDays = cells.filter((c) => c.comp.hasCheckIn).length;
   const leaveDays = cells.filter((c) => c.comp.isFullLeave).length;
+  const annualDays = cells.filter((c) => c.comp.isFullLeave && c.comp.leaveCategory === 'ANNUAL').length;
+  const paidDays = cells.filter((c) => c.comp.isFullLeave && c.comp.leaveCategory === 'PAID').length;
+  const unpaidDays = cells.filter((c) => c.comp.isFullLeave && c.comp.leaveCategory === 'UNPAID').length;
+  const hasTrip = cells.some((c) => c.rec?.type === 'TRIP');
+  // 이번 달에 실제로 나타난 항목만 범례에 표시 (색이 많아 보이는 것 방지)
+  const summaryTail = [
+    annualDays > 0 ? `연차 ${annualDays}일` : '',
+    paidDays > 0 ? `유급 ${paidDays}일` : '',
+    unpaidDays > 0 ? `무급 ${unpaidDays}일` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <Card>
@@ -113,8 +127,8 @@ export function AttendanceCalendar({
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '800' }}>{monthLabel}</Text>
           <Muted size={11}>
             {monthOffset > 0
-              ? `예정 연차 ${leaveDays}일`
-              : `근무 ${workDays}일 · 정상 ${normalDays}일${leaveDays > 0 ? ` · 연차 ${leaveDays}일` : ''}`}
+              ? `예정 휴가 ${leaveDays}일${summaryTail ? ` (${summaryTail})` : ''}`
+              : `근무 ${workDays}일 · 정상 ${normalDays}일${summaryTail ? ` · ${summaryTail}` : ''}`}
           </Muted>
         </Pressable>
         <Pressable onPress={() => { setMonthOffset((v) => v + 1); setSelected(null); }} hitSlop={12}>
@@ -139,14 +153,14 @@ export function AttendanceCalendar({
           const isSel = c.date === selected;
           const anomaly = c.hasData && !c.comp.isFullLeave && !!c.rec && isAnomaly(c.comp);
           const okWork = c.hasData && !c.comp.isFullLeave && !!c.rec && !anomaly;
-          const partialLeave = c.comp.leaveMinutes > 0 && !c.comp.isFullLeave;
           const isHoliday = !!c.holidayName;
           const dow = c.weekday;
-          // 연차=보라(trip), 유급휴가(예비군·경조사 등)=초록(success) — 글씨 라벨과 동일 규칙
-          const leaveColor = c.comp.isPaidLeave ? t.success : t.trip;
-          const leaveSoft = c.comp.isPaidLeave ? t.successSoft : t.tripSoft;
+          // 휴가 색은 종류별로 다르다: 연차=보라 / 유급휴가=파랑 / 무급휴가=회색.
+          // (정상 근무 초록과 절대 겹치지 않게 — lib/palette.ts 단일 출처)
+          const lv = c.comp.leaveCategory ? leaveStyle(t, c.comp.leaveCategory) : null;
+          const workTone = tone(t, c.rec?.type === 'TRIP' ? 'trip' : 'normal');
           const numColor = c.comp.isFullLeave
-            ? leaveColor
+            ? lv!.color
             : isHoliday || dow === 0
             ? t.danger
             : dow === 6
@@ -165,15 +179,16 @@ export function AttendanceCalendar({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 3,
-                  backgroundColor: isSel
-                    ? t.primarySoft
-                    : c.comp.isFullLeave
-                    ? leaveSoft
+                  // 선택 표시는 배경색이 아니라 테두리로 — 선택해도 휴가 종류 색이 가려지지 않게
+                  backgroundColor: c.comp.isFullLeave
+                    ? lv!.soft
                     : isHoliday
                     ? t.dangerSoft
+                    : isSel
+                    ? t.primarySoft
                     : 'transparent',
-                  borderWidth: isToday ? 1.5 : 0,
-                  borderColor: isToday ? t.primary : 'transparent',
+                  borderWidth: isSel ? 2 : isToday ? 1.5 : 0,
+                  borderColor: isSel || isToday ? t.primary : 'transparent',
                   // 미래 날짜라도 승인된 연차/일정이 있으면 선명하게, 빈 미래일만 흐리게
                   opacity: c.isFuture && !c.hasData ? 0.4 : 1,
                 }}
@@ -181,11 +196,11 @@ export function AttendanceCalendar({
                 <Text style={{ fontSize: 13, fontWeight: isToday ? '800' : '600', color: numColor }}>
                   {c.day}
                 </Text>
-                <Row style={{ gap: 2, height: 6, alignItems: 'center' }}>
-                  {okWork && <Dot color={t.success} />}
-                  {anomaly && <Dot color={t.danger} />}
-                  {c.comp.isFullLeave && <Dot color={leaveColor} />}
-                  {partialLeave && <Dot color={leaveColor} />}
+                {/* 마커는 색 + 모양 둘 다 다르게(●정상 ▲이상 ■연차/유급 □무급) — 색약도 구분 가능 */}
+                <Row style={{ gap: 2, height: 7, alignItems: 'center' }}>
+                  {okWork && <Marker shape={workTone.marker} color={workTone.color} />}
+                  {anomaly && <Marker shape="triangle" color={t.danger} />}
+                  {lv && <Marker shape={lv.marker} color={lv.color} />}
                 </Row>
               </View>
             </Pressable>
@@ -193,13 +208,15 @@ export function AttendanceCalendar({
         })}
       </View>
 
-      {/* 범례 */}
+      {/* 범례 — 색·모양이 곧 의미 (근무=초록계열 / 이상=빨강 / 휴가=보라·파랑·회색) */}
       <Row style={{ flexWrap: 'wrap', gap: 10, marginTop: 2 }}>
-        <Legend color={t.success} label="정상 근무" />
-        <Legend color={t.danger} label="지각·부족·이상" />
-        <Legend color={t.trip} label="연차" />
-        <Legend color={t.success} label="유급휴가" />
-        <Legend color={t.danger} label="공휴일·휴무일" soft={t.dangerSoft} />
+        <Legend tone="normal" />
+        <Legend tone="anomaly" />
+        <Legend tone="annual" />
+        <Legend tone="paid" />
+        <Legend tone="unpaid" />
+        {hasTrip && <Legend tone="trip" label="출장" />}
+        <Legend tone="holiday" chip />
       </Row>
 
       {/* 선택일 상세 */}
@@ -213,20 +230,17 @@ export function AttendanceCalendar({
   );
 }
 
-function Dot({ color }: { color: string }) {
-  return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />;
-}
-
-function Legend({ color, label, soft }: { color: string; label: string; soft?: string }) {
+function Legend({ tone: name, label, chip }: { tone: Parameters<typeof tone>[1]; label?: string; chip?: boolean }) {
   const t = useTheme();
+  const st = tone(t, name);
   return (
     <Row style={{ gap: 4, alignItems: 'center' }}>
-      {soft ? (
-        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: soft, borderWidth: 1, borderColor: color }} />
+      {chip ? (
+        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: st.soft, borderWidth: 1, borderColor: st.color }} />
       ) : (
-        <Dot color={color} />
+        <Marker shape={st.marker} color={st.color} />
       )}
-      <Text style={{ fontSize: 11, color: t.textDim }}>{label}</Text>
+      <Text style={{ fontSize: 11, color: t.textDim }}>{label || st.legend}</Text>
     </Row>
   );
 }
@@ -243,7 +257,11 @@ function DayDetail({ cell, onEdit }: { cell: DayCell; onEdit?: (date: string) =>
           {cell.holidayName ? <Badge text={`🔴 ${cell.holidayName}`} color={t.danger} soft={t.dangerSoft} /> : null}
         </Row>
         {comp.isFullLeave ? (
-          <Badge text={comp.isPaidLeave ? '종일 유급휴가' : '종일 연차'} color={comp.isPaidLeave ? t.success : t.trip} />
+          <Badge
+            text={`종일 ${leaveCategoryLabel(comp.leaveCategory ?? undefined)}`}
+            color={leaveStyle(t, comp.leaveCategory).color}
+            soft={leaveStyle(t, comp.leaveCategory).soft}
+          />
         ) : rec ? (
           <Muted>{rec.checkIn ? timeHM(Date.parse(rec.checkIn)) : '--:--'} → {rec.checkOut ? timeHM(Date.parse(rec.checkOut)) : '--:--'}</Muted>
         ) : (
@@ -261,7 +279,7 @@ function DayDetail({ cell, onEdit }: { cell: DayCell; onEdit?: (date: string) =>
       {comp.labels.length > 0 && (
         <Row style={{ flexWrap: 'wrap' }}>
           {comp.labels.map((l) => (
-            <Badge key={l} text={l} color={/부족|미충족|지각|미기록|오류/.test(l) ? t.danger : /유급/.test(l) ? t.success : /연차|출장/.test(l) ? t.trip : t.textDim} />
+            <Badge key={l} text={l} color={labelColor(t, l)} />
           ))}
         </Row>
       )}

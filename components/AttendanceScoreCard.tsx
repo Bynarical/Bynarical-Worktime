@@ -5,7 +5,8 @@ import { useTheme } from '@/lib/theme';
 import { AttendanceScore, Grade, SCORE_WEIGHTS } from '@/lib/attendanceScore';
 
 export function gradeColor(t: any, grade: Grade): string {
-  return grade === 'S' ? t.trip : grade === 'A' ? t.success : grade === 'B' ? t.primary : grade === 'C' ? t.warning : t.danger;
+  // 등급 색은 '성취' 축(브랜드 계열 → 초록 → 인디고 → 주황 → 빨강)이라 휴가 색과 겹치지 않게 accent 사용
+  return grade === 'S' ? t.accent : grade === 'A' ? t.success : grade === 'B' ? t.primary : grade === 'C' ? t.warning : t.danger;
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -55,6 +56,11 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
             <StatTile label="정상근무" value={`${score.normalDays}일`} color={t.success} />
             <StatTile label="출근율" value={score.ratePct != null ? `${Math.round(score.ratePct)}%` : '-'} />
           </Row>
+          {score.unpaidLeaveDays > 0 ? (
+            <Muted size={11} style={{ color: t.leaveUnpaid }}>
+              🪫 무급휴가 {score.unpaidLeaveDays}일은 소정근로일({score.scheduledDays}일)에서 제외되어 점수에 영향이 없습니다.
+            </Muted>
+          ) : null}
 
           <Divider />
           <Text style={{ fontWeight: '700', color: t.textDim, fontSize: 12.5 }}>가점</Text>
@@ -82,7 +88,8 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
             <Muted size={12}>감점 없음 — 성실 근무 👍</Muted>
           )}
           <Muted size={11} style={{ marginTop: 4 }}>
-            지각·부족·조기퇴근은 시간(분)에 비례, 무단이탈은 시간 + 잦을수록 가중 감점. 연차·유급휴가는 정상. 100점 = A, 초과근무 가점 시 100 초과(S).
+            지각·부족·조기퇴근은 시간(분)에 비례, 무단이탈은 시간 + 잦을수록 가중 감점. 연차·유급휴가는 정상,
+            종일 무급휴가는 소정근로일에서 제외(감점·출근율 영향 없음). 100점 = A, 초과근무 가점 시 100 초과(S).
           </Muted>
         </>
       )}

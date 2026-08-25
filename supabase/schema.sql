@@ -63,6 +63,8 @@ create table if not exists public.leaves (
   date date not null,
   hours integer not null,
   segment text not null,
+  -- 휴가 종류: ANNUAL=연차(잔여 차감) / PAID=유급휴가 / UNPAID=무급휴가
+  category text not null default 'ANNUAL' check (category in ('ANNUAL','PAID','UNPAID')),
   start_time text,
   end_time text,
   reason text,

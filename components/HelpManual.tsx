@@ -98,11 +98,13 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
             </Card>
 
             <Card>
-              <Section emoji="🌴" title="연차 · 휴가 신청 (연차 탭)">
+              <Section emoji="🌴" title="휴가 신청 — 연차 · 유급 · 무급 (연차 탭)">
                 <Step><Text style={{ fontWeight: '700' }}>연차는 눈치 보지 말고 자유롭게 사용하세요.</Text> 관리자에게 승인 요청만 하면 됩니다.</Step>
                 <Step>연차는 <Text style={{ fontWeight: '700' }}>2시간 단위</Text>(반반차 2h · 반차 4h · 종일 8h)로 신청합니다.</Step>
                 <Step>오전(늦게 출근)/오후(일찍 퇴근)/종일/직접지정 중 선택 → 날짜·시간 고르고 <Text style={{ fontWeight: '700' }}>신청</Text>.</Step>
-                <Step>예비군·경조사·공가 등은 <Text style={{ fontWeight: '700' }}>유급휴가</Text>로 신청(연차 잔여 차감 없음).</Step>
+                <Step>예비군·경조사·공가·병가 등은 <Text style={{ fontWeight: '700' }}>유급휴가</Text>로 신청 — 연차 잔여 차감 없고 급여도 그대로 지급됩니다. (사유 입력 필수)</Step>
+                <Step>연차를 다 썼거나 개인 사정으로 더 쉬어야 하면 <Text style={{ fontWeight: '700' }}>무급휴가</Text>로 신청하세요 — 연차 잔여는 차감되지 않지만 <Text style={{ fontWeight: '700' }}>그 시간만큼 급여가 지급되지 않습니다.</Text> (사유 입력 필수)</Step>
+                <Step>종일 무급휴가는 근태 점수·출근율 산정에서 <Text style={{ fontWeight: '700' }}>제외</Text>되어 결근으로 잡히지 않습니다.</Step>
                 <Step>신청은 <Text style={{ fontWeight: '700' }}>관리자 승인</Text> 후 확정됩니다. 상단에서 잔여 연차를 확인하세요.</Step>
                 <Step><Text style={{ fontWeight: '700' }}>3일 이상 연속 장기 출타</Text>는 업무 조율을 위해 <Text style={{ fontWeight: '700' }}>1주일 전</Text>에 관리자에게 미리 알려주시길 권고합니다.</Step>
                 <Step><Text style={{ fontWeight: '700' }}>반차(4시간) 이상</Text> 휴가는 팀 공유를 위해 <Text style={{ fontWeight: '700' }}>Outlook 캘린더</Text>에도 표시해 주세요.</Step>
@@ -112,7 +114,14 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
             <Card>
               <Section emoji="📊" title="이력 · 달력 (이력 탭)">
                 <Step>월별 근무 요약과 날짜별 기록을 달력/목록으로 볼 수 있습니다.</Step>
-                <Step>달력 색: 초록=정상 근무, 빨강=지각·부족, 보라=연차, 초록=유급휴가.</Step>
+                <Step>
+                  달력 색·모양으로 한눈에 구분됩니다 — <Text style={{ fontWeight: '700', color: t.success }}>● 초록=정상 근무</Text>,{' '}
+                  <Text style={{ fontWeight: '700', color: t.danger }}>▲ 빨강=지각·부족·이상</Text>,{' '}
+                  <Text style={{ fontWeight: '700', color: t.leaveAnnual }}>■ 보라=연차</Text>,{' '}
+                  <Text style={{ fontWeight: '700', color: t.leavePaid }}>■ 파랑=유급휴가</Text>,{' '}
+                  <Text style={{ fontWeight: '700', color: t.leaveUnpaid }}>□ 회색=무급휴가</Text>.
+                </Step>
+                <Step>휴가 색(보라·파랑·회색)은 근무 색(초록)과 절대 겹치지 않게 정리했습니다. 날짜를 누르면 그날 상세가 열립니다.</Step>
               </Section>
             </Card>
 

@@ -1,7 +1,8 @@
 // 연간 근태 점수 — 감점(이상)+가점(초과근무) · analog(분 단위 비례) 방식.
 // "정시·성실 근무 = 100(불이익 없음), 초과근무 = 100 초과, 이상/무단이탈 = 시간에 비례 감점".
 // 지각·부족·조기퇴근·무단이탈은 '얼마나'(분)를 반영해 비례 감점. 결근/코어위반/퇴근미기록은 건당.
-// 연차·유급휴가는 정상으로 간주. 진행 중인 당일은 판정 제외.
+// 연차·유급휴가는 정상으로 간주. 종일 무급휴가는 소정근로일 자체에서 제외(감점·출근율 영향 없음).
+// 진행 중인 당일은 판정 제외.
 // 집계 창은 실제 추적 시작(연초·입사일·첫 기록/연차일 중 가장 늦은 날)부터 → 도입 전 거짓 결근 방지.
 import { AttendanceRecord, LeaveRequest, AwayLog, WorkPolicy } from './types';
 import { addDaysKey, weekday, dateKeyToMs, hmToMinutes } from './time';
@@ -33,7 +34,8 @@ export interface AttendanceScore {
   scheduledDays: number;
   workedDays: number;
   normalDays: number;
-  leaveDays: number;
+  leaveDays: number; // 종일 연차·유급휴가 일수
+  unpaidLeaveDays: number; // 종일 무급휴가 일수(소정근로일에서 제외됨)
   absentDays: number;
   lateCount: number;
   lateMinutes: number;
@@ -104,6 +106,7 @@ export function computeAttendanceScore(
   let workedDays = 0;
   let normalDays = 0;
   let leaveDays = 0;
+  let unpaidLeaveDays = 0;
   let absentDays = 0;
   let lateCount = 0;
   let lateMinutes = 0;
@@ -124,13 +127,20 @@ export function computeAttendanceScore(
     d = addDaysKey(d, 1);
     const wd = weekday(dateKeyToMs(cur));
     if (!workdaySet.has(wd) || holidays.has(cur)) continue;
-    scheduledDays += 1;
 
     const rec = recByDate.get(cur);
     const dayLeaves = leavesByDate.get(cur) || [];
+    const comp = computeDay(rec, dayLeaves, workPolicy, { dateStr: cur, todayStr: today });
+
+    // 종일 무급휴가 = 근로 제공 의무가 없는 날 → 소정근로일·출근율에서 제외(감점 없음)
+    if (comp.isFullLeave && comp.leaveCategory === 'UNPAID') {
+      unpaidLeaveDays += 1;
+      continue;
+    }
+
+    scheduledDays += 1;
     if (rec?.checkIn || dayLeaves.length) attended += 1;
 
-    const comp = computeDay(rec, dayLeaves, workPolicy, { dateStr: cur, todayStr: today });
     if (comp.isFullLeave) {
       leaveDays += 1;
       continue;
@@ -184,6 +194,7 @@ export function computeAttendanceScore(
     workedDays,
     normalDays,
     leaveDays,
+    unpaidLeaveDays,
     absentDays,
     lateCount,
     lateMinutes,

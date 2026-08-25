@@ -1,4 +1,13 @@
 // 디자인 시스템 — 라이트/다크 팔레트 + 토큰(그래디언트/그림자/radius/타이포)
+//
+// ⚠ 색 코딩 규칙(2026-08 재정비) — 의미가 다른 것은 색상(hue)도 반드시 다르게.
+//   근무 상태  : success 초록 = 정상 근무·충족 / danger 빨강 = 이상(지각·부족·미기록·결근)
+//                warning 주황 = 대기·주의(승인 대기, 근무지 밖 등)
+//   휴가        : leaveAnnual 보라 = 연차 / leavePaid 파랑 = 유급휴가 / leaveUnpaid 회색 = 무급휴가
+//                → 유급휴가를 초록으로 쓰면 "정상 근무"와 헷갈리므로 절대 초록 계열을 쓰지 않는다.
+//   출장        : trip 청록 = 출장(근무의 한 형태라 초록 인접, 대신 ✈ 아이콘으로 구분)
+//   primary/accent(인디고·바이올렛)는 브랜드·UI 강조 전용 — 데이터 상태 색으로 쓰지 않는다.
+//   화면에서 색을 직접 고르지 말고 lib/palette.ts 의 tone 헬퍼를 쓸 것(단일 출처).
 import { useColorScheme, ViewStyle } from 'react-native';
 
 export interface Theme {
@@ -27,7 +36,14 @@ export interface Theme {
   dangerSoft: string;
   warning: string;
   warningSoft: string;
-  trip: string;
+  // 휴가 계열 (근무 상태 색과 분리)
+  leaveAnnual: string; // 연차
+  leaveAnnualSoft: string;
+  leavePaid: string; // 유급휴가(예비군·공가·경조사 등)
+  leavePaidSoft: string;
+  leaveUnpaid: string; // 무급휴가
+  leaveUnpaidSoft: string;
+  trip: string; // 출장
   tripSoft: string;
   // 그래디언트
   brand: [string, string];
@@ -76,8 +92,14 @@ const light: Theme = {
   dangerSoft: '#fde8ec',
   warning: '#c2660a',
   warningSoft: '#fbf0e0',
-  trip: '#7c3aed',
-  tripSoft: '#f0eafe',
+  leaveAnnual: '#7c3aed',
+  leaveAnnualSoft: '#f0eafe',
+  leavePaid: '#0369a1',
+  leavePaidSoft: '#e0f2fe',
+  leaveUnpaid: '#5b6472',
+  leaveUnpaidSoft: '#eceff3',
+  trip: '#0f766e',
+  tripSoft: '#dcf5f1',
   brand: ['#4f46e5', '#7c3aed'],
   hero: ['#4f46e5', '#6d28d9', '#7c3aed'],
   onHero: '#ffffff',
@@ -109,8 +131,14 @@ const dark: Theme = {
   dangerSoft: '#2a1420',
   warning: '#fbbf24',
   warningSoft: '#2a1f0b',
-  trip: '#a78bfa',
-  tripSoft: '#1d1830',
+  leaveAnnual: '#a78bfa',
+  leaveAnnualSoft: '#1d1830',
+  leavePaid: '#38bdf8',
+  leavePaidSoft: '#0a2130',
+  leaveUnpaid: '#94a3b8',
+  leaveUnpaidSoft: '#1b1f27',
+  trip: '#2dd4bf',
+  tripSoft: '#08211f',
   brand: ['#6d5efc', '#9333ea'],
   hero: ['#4f46e5', '#6d28d9', '#7e22ce'],
   onHero: '#ffffff',

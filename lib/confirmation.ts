@@ -82,7 +82,8 @@ export function weekContentHash(
       date: l.date,
       segment: l.segment,
       hours: l.hours,
-      category: l.category === 'PAID' ? 'PAID' : 'ANNUAL',
+      // 구서명 해시 호환: 기존 값('ANNUAL'/'PAID')은 그대로 두고 UNPAID만 추가
+      category: l.category === 'PAID' ? 'PAID' : l.category === 'UNPAID' ? 'UNPAID' : 'ANNUAL',
       s: l.startTime || '',
       e: l.endTime || '',
     }))

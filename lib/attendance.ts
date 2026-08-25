@@ -1,5 +1,6 @@
 // 근태 도메인 로직 — 코어타임 근무제(근로계약서 제4조) 반영.
-import { AttendanceRecord, LeaveRequest, WorkPolicy } from './types';
+import { AttendanceRecord, LeaveCategory, LeaveRequest, WorkPolicy } from './types';
+import { LEAVE_CATEGORY_LABELS } from './leave';
 import { ceilToStep, hmToMinutes, minutesOfDay, minutesToHM, weekday } from './time';
 
 export interface Interval {
@@ -83,12 +84,15 @@ export interface DayComputation {
   expectedOutMin: number; // 연차 반영 기대 퇴근
   workedMinutes: number; // 휴게 제외 실근로(퇴근 전이면 현재까지)
   breakDeducted: number;
-  requiredMinutes: number; // 연차 차감 후 소정근로
-  leaveMinutes: number;
+  requiredMinutes: number; // 휴가 차감 후 소정근로
+  leaveMinutes: number; // 그날 휴가 합계(연차+유급+무급)
+  annualMinutes: number; // 연차
+  paidMinutes: number; // 유급휴가
+  unpaidMinutes: number; // 무급휴가
   diffMinutes: number; // worked - required (음수=부족, 양수=초과)
   isWorkday: boolean;
   isFullLeave: boolean;
-  isPaidLeave: boolean; // 그날 휴가가 유급휴가(연차 미차감)인지
+  leaveCategory: LeaveCategory | null; // 그날의 대표 휴가 종류(종일 휴가 우선 → 시간 많은 순). 휴가 없으면 null
   effectiveStartMin: number; // 적용 출근시각(반올림)
   flags: {
     late: boolean; // 지각(적용 출근이 최대 출근시각 초과)
@@ -130,18 +134,27 @@ export function computeDay(
       : latest;
   const effectiveStartMin = checkInMin != null ? Math.max(checkInMin, plannedStartMin) : plannedStartMin;
 
-  // 연차 집계
+  // 휴가 집계 (연차/유급/무급) — 종류가 달라도 그날 소정근로는 똑같이 줄어든다.
   let leaveMinutes = 0;
   let amLeaveMin = 0;
+  const byCategory: Record<LeaveCategory, number> = { ANNUAL: 0, PAID: 0, UNPAID: 0 };
+  let fullLeaveCategory: LeaveCategory | null = null;
   for (const l of leaves) {
     if (l.status !== 'APPROVED') continue;
-    leaveMinutes += l.hours * 60;
-    if (l.segment === 'AM') amLeaveMin += l.hours * 60;
+    const mins = l.hours * 60;
+    const cat: LeaveCategory = l.category ?? 'ANNUAL';
+    leaveMinutes += mins;
+    byCategory[cat] += mins;
+    if (l.segment === 'AM') amLeaveMin += mins;
+    if (l.segment === 'FULL' && !fullLeaveCategory) fullLeaveCategory = cat;
   }
-  const isFullLeave =
-    leaves.some((l) => l.status === 'APPROVED' && l.segment === 'FULL') ||
-    leaveMinutes >= policy.dailyWorkMinutes;
-  const isPaidLeave = leaves.some((l) => l.status === 'APPROVED' && l.category === 'PAID');
+  const isFullLeave = fullLeaveCategory != null || leaveMinutes >= policy.dailyWorkMinutes;
+  // 대표 휴가 종류: 종일 휴가가 있으면 그 종류, 없으면 시간이 가장 많은 종류
+  const leaveCategory: LeaveCategory | null =
+    fullLeaveCategory ??
+    (leaveMinutes > 0
+      ? (['ANNUAL', 'PAID', 'UNPAID'] as LeaveCategory[]).reduce((best, c) => (byCategory[c] > byCategory[best] ? c : best), 'ANNUAL')
+      : null);
   const requiredMinutes = Math.max(0, policy.dailyWorkMinutes - leaveMinutes);
 
   const plannedEndMin = plannedEndMinutes(plannedStartMin, policy);
@@ -206,9 +219,14 @@ export function computeDay(
   const diffMinutes = hasCheckOut ? workedMinutes - requiredMinutes : 0;
 
   const labels: string[] = [];
-  const leaveWord = isPaidLeave ? '유급휴가' : '연차';
-  if (isFullLeave) labels.push(`${leaveWord}(종일)`);
-  else if (leaveMinutes > 0) labels.push(`${leaveWord} ${leaveMinutes / 60}h`);
+  if (isFullLeave) {
+    labels.push(`${LEAVE_CATEGORY_LABELS[leaveCategory ?? 'ANNUAL']}(종일)`);
+  } else {
+    // 부분 휴가는 종류별로 각각 표기(연차 2h + 무급휴가 4h 같은 조합도 그대로 보이게)
+    (['ANNUAL', 'PAID', 'UNPAID'] as LeaveCategory[]).forEach((c) => {
+      if (byCategory[c] > 0) labels.push(`${LEAVE_CATEGORY_LABELS[c]} ${byCategory[c] / 60}h`);
+    });
+  }
   if (flags.late) labels.push('지각');
   if (flags.coreViolation) labels.push('코어타임 미충족');
   if (flags.earlyLeave) labels.push('조기퇴근');
@@ -232,10 +250,13 @@ export function computeDay(
     breakDeducted,
     requiredMinutes,
     leaveMinutes,
+    annualMinutes: byCategory.ANNUAL,
+    paidMinutes: byCategory.PAID,
+    unpaidMinutes: byCategory.UNPAID,
     diffMinutes,
     isWorkday,
     isFullLeave,
-    isPaidLeave,
+    leaveCategory,
     flags,
     labels,
   };
@@ -258,7 +279,11 @@ export interface PeriodSummary {
   coreViolationCount: number;
   earlyLeaveCount: number;
   missingCount: number;
-  leaveMinutes: number; // 사용 연차(분)
+  leaveMinutes: number; // 사용 휴가 합계(분)
+  annualMinutes: number; // 그중 연차(분)
+  paidMinutes: number; // 그중 유급휴가(분)
+  unpaidMinutes: number; // 그중 무급휴가(분)
+  unpaidFullDays: number; // 종일 무급휴가 일수
   tripCount: number;
 }
 
@@ -295,6 +320,10 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
     earlyLeaveCount: 0,
     missingCount: 0,
     leaveMinutes: 0,
+    annualMinutes: 0,
+    paidMinutes: 0,
+    unpaidMinutes: 0,
+    unpaidFullDays: 0,
     tripCount: 0,
   };
   for (const c of computations) {
@@ -304,6 +333,10 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
     s.totalWorked += c.workedMinutes;
     s.totalRequired += c.requiredMinutes;
     s.leaveMinutes += c.leaveMinutes;
+    s.annualMinutes += c.annualMinutes;
+    s.paidMinutes += c.paidMinutes;
+    s.unpaidMinutes += c.unpaidMinutes;
+    if (c.isFullLeave && c.leaveCategory === 'UNPAID') s.unpaidFullDays += 1;
     // 날짜별 초과/부족을 상계 없이 합산 (그날의 소정 = 연차 차감 후 기준)
     if (c.flags.insufficient) {
       s.shortfallDays += 1;

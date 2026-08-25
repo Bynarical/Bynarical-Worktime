@@ -25,6 +25,8 @@ import { HelpManual } from '@/components/HelpManual';
 import { SignReminderPopup } from '@/components/SignReminderPopup';
 import { getCurrentPoint, nearestWorkplace } from '@/lib/geo';
 import { computeDay, workEndMinutes } from '@/lib/attendance';
+import { LEAVE_CATEGORY_ICONS, leaveCategoryLabel } from '@/lib/leave';
+import { labelColor, leaveStyle } from '@/lib/palette';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
 import { Workplace } from '@/lib/types';
 import { MEAL_DAILY_LIMIT, CONSENT_TEXT } from '@/lib/config';
@@ -76,6 +78,9 @@ export default function Today() {
     () => computeDay(rec, todaysLeaves.filter((l) => l.status === 'APPROVED'), policy, { nowMin: minutesOfDay(now), dateStr: today, todayStr: today }),
     [rec, todaysLeaves, policy, now, today]
   );
+  // 오늘의 휴가 카드 표시용 — 대기중(미승인) 휴가도 종류·시간을 제대로 보여준다(comp는 승인분만 반영).
+  const todayLeaveCategory = comp.leaveCategory ?? todaysLeaves[0]?.category ?? 'ANNUAL';
+  const todayApprovedLeaveHours = todaysLeaves.filter((l) => l.status === 'APPROVED').reduce((a, l) => a + l.hours, 0);
 
   const previewStartMin = ceilToStep(minutesOfDay(now), policy.clockInStepMinutes || 30);
   const previewOutMin = workEndMinutes(previewStartMin, comp.requiredMinutes, policy);
@@ -306,17 +311,23 @@ export default function Today() {
         </Card>
       )}
 
-      {/* 연차 표시 */}
+      {/* 오늘의 휴가 표시 (연차 / 유급휴가 / 무급휴가) */}
       {todaysLeaves.length > 0 && (
         <Card>
           <Row style={{ justifyContent: 'space-between' }}>
-            <Text style={{ fontWeight: '700', color: t.text }}>오늘의 연차 🌴</Text>
-            <Badge text={comp.isFullLeave ? '종일' : `${comp.leaveMinutes / 60}시간`} color={t.trip} soft={t.tripSoft} />
+            <Text style={{ fontWeight: '700', color: t.text }}>
+              오늘의 휴가 {LEAVE_CATEGORY_ICONS[todayLeaveCategory]}
+            </Text>
+            <Badge
+              text={comp.isFullLeave ? '종일' : todayApprovedLeaveHours > 0 ? `${todayApprovedLeaveHours}시간` : '승인 대기'}
+              color={leaveStyle(t, todayLeaveCategory).color}
+              soft={leaveStyle(t, todayLeaveCategory).soft}
+            />
           </Row>
           {todaysLeaves.map((l) => (
             <KV
               key={l.id}
-              k={`${l.hours}시간 · ${l.segment === 'FULL' ? '종일' : l.segment === 'AM' ? '오전' : l.segment === 'PM' ? '오후' : '지정'}`}
+              k={`${leaveCategoryLabel(l.category)} · ${l.hours}시간 · ${l.segment === 'FULL' ? '종일' : l.segment === 'AM' ? '오전' : l.segment === 'PM' ? '오후' : '지정'}`}
               v={l.status === 'APPROVED' ? '승인' : '대기'}
               vColor={l.status === 'APPROVED' ? t.success : t.warning}
             />
@@ -366,8 +377,8 @@ export default function Today() {
           {openOuting ? (
             <>
               <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <Body style={{ fontWeight: '700', color: t.trip }}>🚶 외출 중 · {openOuting.startTime}부터</Body>
-                <Badge text="복귀 전" color={t.trip} />
+                <Body style={{ fontWeight: '700', color: t.leaveAnnual }}>🚶 외출 중 · {openOuting.startTime}부터</Body>
+                <Badge text="복귀 전" color={t.leaveAnnual} />
               </Row>
               <Row>
                 <View style={{ flex: 1 }}>
@@ -412,7 +423,7 @@ export default function Today() {
           {comp.labels.length > 0 && (
             <Row style={{ flexWrap: 'wrap' }}>
               {comp.labels.map((l) => (
-                <Badge key={l} text={l} color={/부족|미충족|지각|미기록/.test(l) ? t.danger : /연차|출장/.test(l) ? t.trip : t.textDim} />
+                <Badge key={l} text={l} color={labelColor(t, l)} />
               ))}
             </Row>
           )}

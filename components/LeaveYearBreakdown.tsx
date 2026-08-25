@@ -53,7 +53,7 @@ export function LeaveYearBreakdown({
               {expired ? (
                 <Mini k="소멸" v={hoursToDayLabel(unusedExpired, fullDay)} color={unusedExpired > 0 ? t.danger : t.textFaint} />
               ) : (
-                <Mini k="잔여" v={hoursToDayLabel(b.remainingHours, fullDay)} color={b.remainingHours < 0 ? t.danger : t.trip} />
+                <Mini k="잔여" v={hoursToDayLabel(b.remainingHours, fullDay)} color={b.remainingHours < 0 ? t.danger : t.leaveAnnual} />
               )}
             </Row>
           </View>

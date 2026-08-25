@@ -18,7 +18,18 @@ import {
 } from '@/components/ui';
 import { useStore, isTestAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
-import { computeBalance, hoursToDayLabel, validateRequest, SEGMENT_LABELS, STATUS_LABELS } from '@/lib/leave';
+import {
+  computeBalance,
+  hoursToDayLabel,
+  validateRequest,
+  deductsBalance,
+  leaveCategoryLabel,
+  SEGMENT_LABELS,
+  STATUS_LABELS,
+  LEAVE_CATEGORY_ICONS,
+  LEAVE_CATEGORY_NOTES,
+} from '@/lib/leave';
+import { leaveStyle } from '@/lib/palette';
 import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
 import { dateKey, addDaysKey, hmToMinutes } from '@/lib/time';
 import { LeaveSegment, LeaveUnit, LeaveRequest, LeaveCategory } from '@/lib/types';
@@ -51,6 +62,21 @@ export default function Leave() {
     [s.leaves, s.user]
   );
 
+  // 올해 사용한 특별휴가(유급·무급) — 연차 잔여에 안 잡히니 따로 보여준다.
+  const special = useMemo(() => {
+    const yr = dateKey().slice(0, 4);
+    const mine = s.leaves.filter((l) => l.userId === s.user?.id && l.status === 'APPROVED' && l.date.startsWith(yr));
+    const sum = (c: LeaveCategory) => mine.filter((l) => l.category === c).reduce((a, l) => a + l.hours, 0);
+    return { year: yr, paid: sum('PAID'), unpaid: sum('UNPAID') };
+  }, [s.leaves, s.user]);
+
+  const catStyle = leaveStyle(t, category);
+  const reasonPresets: Record<LeaveCategory, string[]> = {
+    ANNUAL: [],
+    PAID: ['예비군', '공가', '경조사', '병가'],
+    UNPAID: ['개인사정', '가족돌봄', '병가(무급)', '연차 소진'],
+  };
+
   function pickSegment(seg: LeaveSegment) {
     setSegment(seg);
     if (seg === 'FULL') setHours(8);
@@ -78,8 +104,12 @@ export default function Leave() {
       }
       effHours = rounded as LeaveUnit;
     }
-    if (category === 'PAID' && !reason.trim()) {
-      setMsg('유급휴가는 사유(예: 예비군, 공가, 경조사)를 입력하세요.');
+    if (!deductsBalance(category) && !reason.trim()) {
+      setMsg(
+        category === 'PAID'
+          ? '유급휴가는 사유(예: 예비군, 공가, 경조사)를 입력하세요.'
+          : '무급휴가는 사유(예: 개인사정, 가족돌봄)를 입력하세요.'
+      );
       return;
     }
     const v = validateRequest(s.user, { date, hours: effHours, category }, s.leaves, s.adjustments, policy, leaveCtx);
@@ -96,7 +126,7 @@ export default function Leave() {
       endTime: segment === 'CUSTOM' ? endTime : undefined,
       reason: reason.trim() || undefined,
     });
-    setMsg(category === 'PAID' ? '✓ 유급휴가 신청이 접수되었습니다.' : '✓ 연차 신청이 접수되었습니다.');
+    setMsg(`✓ ${leaveCategoryLabel(category)} 신청이 접수되었습니다.`);
     setReason('');
   }
 
@@ -138,25 +168,54 @@ export default function Leave() {
       {/* 연차 연도별 내역 */}
       {balance && balance.buckets.length > 0 && <LeaveYearBreakdown buckets={balance.buckets} fullDay={policy.fullDayHours} />}
 
+      {/* 올해 사용한 특별휴가 (연차 잔여와 무관) */}
+      {(special.paid > 0 || special.unpaid > 0) && (
+        <Card>
+          <Text style={{ fontWeight: '700', color: t.text }}>{special.year}년 특별휴가 사용</Text>
+          <Muted size={12}>유급·무급휴가는 연차 잔여에서 차감되지 않아 위 내역과 별도로 집계됩니다.</Muted>
+          <Row style={{ gap: 8 }}>
+            <StatTile
+              label={`${LEAVE_CATEGORY_ICONS.PAID} 유급휴가`}
+              value={hoursToDayLabel(special.paid, policy.fullDayHours)}
+              sub={`${special.paid}h · 급여 지급`}
+              color={t.leavePaid}
+            />
+            <StatTile
+              label={`${LEAVE_CATEGORY_ICONS.UNPAID} 무급휴가`}
+              value={hoursToDayLabel(special.unpaid, policy.fullDayHours)}
+              sub={`${special.unpaid}h · 급여 미지급`}
+              color={t.leaveUnpaid}
+            />
+          </Row>
+        </Card>
+      )}
+
       {/* 신청 폼 */}
       <Card>
         <Text style={{ fontWeight: '700', color: t.text }}>휴가 신청</Text>
-        <Muted size={12}>
-          {category === 'PAID'
-            ? '유급휴가(예비군·공가·경조사 등)는 연차 잔여에서 차감되지 않습니다.'
-            : '연차: 2시간 단위(2/4/6/8h) 분할 사용, 사용한 시간만큼 차감됩니다.'}
-        </Muted>
+        <Muted size={12}>{LEAVE_CATEGORY_NOTES[category]}</Muted>
 
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.textDim, fontSize: 13, fontWeight: '600' }}>종류</Text>
           <Row style={{ flexWrap: 'wrap' }}>
-            <Chip label="연차" active={category === 'ANNUAL'} onPress={() => setCategory('ANNUAL')} />
-            <Chip label="유급휴가" active={category === 'PAID'} onPress={() => { setCategory('PAID'); pickSegment('FULL'); }} color={t.success} />
+            {(['ANNUAL', 'PAID', 'UNPAID'] as LeaveCategory[]).map((c) => (
+              <Chip
+                key={c}
+                label={`${LEAVE_CATEGORY_ICONS[c]} ${leaveCategoryLabel(c)}`}
+                active={category === c}
+                color={leaveStyle(t, c).color}
+                onPress={() => {
+                  setCategory(c);
+                  setReason('');
+                  if (c !== 'ANNUAL') pickSegment('FULL');
+                }}
+              />
+            ))}
           </Row>
-          {category === 'PAID' && (
+          {reasonPresets[category].length > 0 && (
             <Row style={{ flexWrap: 'wrap' }}>
-              {['예비군', '공가', '경조사', '병가'].map((r) => (
-                <Chip key={r} label={r} active={reason === r} onPress={() => setReason(r)} small color={t.success} />
+              {reasonPresets[category].map((r) => (
+                <Chip key={r} label={r} active={reason === r} onPress={() => setReason(r)} small color={catStyle.color} />
               ))}
             </Row>
           )}
@@ -177,7 +236,7 @@ export default function Leave() {
           <Text style={{ color: t.textDim, fontSize: 13, fontWeight: '600' }}>구분</Text>
           <Row style={{ flexWrap: 'wrap' }}>
             {(['AM', 'PM', 'FULL', 'CUSTOM'] as LeaveSegment[]).map((seg) => (
-              <Chip key={seg} label={SEGMENT_LABELS[seg]} active={segment === seg} onPress={() => pickSegment(seg)} color={t.trip} />
+              <Chip key={seg} label={SEGMENT_LABELS[seg]} active={segment === seg} onPress={() => pickSegment(seg)} color={catStyle.color} />
             ))}
           </Row>
         </View>
@@ -200,9 +259,18 @@ export default function Leave() {
           </Row>
         )}
 
-        <Field label={category === 'PAID' ? '사유 (필수)' : '사유 (선택)'} value={reason} onChangeText={setReason} placeholder={category === 'PAID' ? '예: 예비군' : '예: 병원 방문'} />
+        <Field
+          label={deductsBalance(category) ? '사유 (선택)' : '사유 (필수)'}
+          value={reason}
+          onChangeText={setReason}
+          placeholder={category === 'ANNUAL' ? '예: 병원 방문' : category === 'PAID' ? '예: 예비군' : '예: 개인사정'}
+        />
         {msg ? <Muted size={13}><Text style={{ color: msg.startsWith('✓') ? t.success : t.danger }}>{msg}</Text></Muted> : null}
-        <Button label={category === 'PAID' ? '유급휴가 신청' : '연차 신청'} variant={category === 'PAID' ? 'success' : 'trip'} onPress={submit} />
+        <Button
+          label={`${leaveCategoryLabel(category)} 신청`}
+          variant={category === 'ANNUAL' ? 'annual' : category === 'PAID' ? 'paid' : 'unpaid'}
+          onPress={submit}
+        />
       </Card>
 
       {/* 내 신청 내역 */}
@@ -213,7 +281,11 @@ export default function Leave() {
           <Row style={{ justifyContent: 'space-between' }}>
             <Row style={{ gap: 6 }}>
               <Body style={{ fontWeight: '700' }}>{l.date}</Body>
-              <Badge text={l.category === 'PAID' ? '유급휴가' : '연차'} color={l.category === 'PAID' ? t.success : t.trip} />
+              <Badge
+                text={`${LEAVE_CATEGORY_ICONS[l.category ?? 'ANNUAL']} ${leaveCategoryLabel(l.category)}`}
+                color={leaveStyle(t, l.category).color}
+                soft={leaveStyle(t, l.category).soft}
+              />
             </Row>
             <StatusBadge status={l.status} />
           </Row>
@@ -314,7 +386,7 @@ function AdminApproval() {
         <Card key={l.id}>
           <Row style={{ justifyContent: 'space-between' }}>
             <Body style={{ fontWeight: '700' }}>{l.userName} · {l.date}</Body>
-            <Badge text={`${l.hours}h`} color={t.trip} />
+            <Badge text={`${leaveCategoryLabel(l.category)} ${l.hours}h`} color={leaveStyle(t, l.category).color} soft={leaveStyle(t, l.category).soft} />
           </Row>
           <Muted size={12}>{SEGMENT_LABELS[l.segment]}{l.reason ? ` · ${l.reason}` : ''}</Muted>
           <Row>
@@ -370,7 +442,7 @@ function AdminApproval() {
               </View>
               <Switch
                 value={!!s.profilesById[adjUser]?.isAdmin}
-                color={t.trip}
+                color={t.primary}
                 onValueChange={(v) => {
                   if (adjUser === s.user?.id) { setInfoMsg('본인 관리자 권한은 해제할 수 없습니다.'); return; }
                   s.adminUpdateProfile(adjUser, { isAdmin: v });
@@ -381,7 +453,7 @@ function AdminApproval() {
             <Divider />
             <Row style={{ alignItems: 'flex-end' }}>
               <View style={{ flex: 1 }}><Field label="연차 조정(h) · 양수=부여, 음수=차감" value={adjHours} onChangeText={setAdjHours} placeholder="예: 8 또는 -2" keyboardType="numbers-and-punctuation" /></View>
-              <Button label="조정" variant="trip" small onPress={grant} />
+              <Button label="조정" variant="annual" small onPress={grant} />
             </Row>
             {adjMsg ? <Muted size={12}>{adjMsg}</Muted> : null}
           </>

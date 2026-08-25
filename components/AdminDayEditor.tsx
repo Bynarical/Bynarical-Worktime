@@ -5,7 +5,9 @@ import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { confirmationCovering } from '@/lib/confirmation';
 import { timeHM, hmToMinutes, minutesToHM, ceilToStep } from '@/lib/time';
-import { AttendanceType, LeaveSegment, LeaveUnit } from '@/lib/types';
+import { LEAVE_CATEGORY_ICONS, LEAVE_CATEGORY_NOTES, leaveCategoryLabel } from '@/lib/leave';
+import { leaveStyle } from '@/lib/palette';
+import { AttendanceType, LeaveCategory, LeaveSegment, LeaveUnit } from '@/lib/types';
 
 // 'HH:MM' → 해당 날짜(KST)의 ISO 문자열. 빈값=null(지움), 형식오류=undefined.
 function hmToIso(date: string, hm: string): string | null | undefined {
@@ -60,6 +62,9 @@ export function AdminDayEditor({
   const [type, setType] = useState<AttendanceType>(rec?.type ?? 'WORK');
   const [aStart, setAStart] = useState('');
   const [aEnd, setAEnd] = useState('');
+  // 관리자가 대신 등록할 휴가 종류(연차/유급/무급)
+  const [leaveCat, setLeaveCat] = useState<LeaveCategory>('ANNUAL');
+  const [leaveReason, setLeaveReason] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -92,9 +97,10 @@ export function AdminDayEditor({
 
   async function addLeave(segment: LeaveSegment, hours: LeaveUnit) {
     setBusy(true);
-    await s.adminAddLeave(userId, { date, segment, hours });
+    await s.adminAddLeave(userId, { date, segment, hours, category: leaveCat, reason: leaveReason.trim() || undefined });
     setBusy(false);
-    setMsg('✓ 연차가 등록되었습니다.');
+    setLeaveReason('');
+    setMsg(`✓ ${leaveCategoryLabel(leaveCat)}가 등록되었습니다.`);
   }
 
   async function delLeave(id: string) {
@@ -186,28 +192,55 @@ export function AdminDayEditor({
               )}
 
               <Divider />
-              <Text style={{ fontWeight: '700', color: t.text }}>연차</Text>
+              <Text style={{ fontWeight: '700', color: t.text }}>휴가 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(연차 · 유급 · 무급)</Text></Text>
               {dayLeaves.length === 0 ? (
-                <Muted size={12}>이 날 등록된 연차가 없습니다.</Muted>
+                <Muted size={12}>이 날 등록된 휴가가 없습니다.</Muted>
               ) : (
                 dayLeaves.map((l) => (
                   <Row key={l.id} style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Badge text={`${SEG_LABEL[l.segment] || l.segment} ${l.hours}h${l.category === 'PAID' ? ' 유급' : ''}`} color={t.trip} />
+                    <Badge
+                      text={`${LEAVE_CATEGORY_ICONS[l.category ?? 'ANNUAL']} ${leaveCategoryLabel(l.category)} · ${SEG_LABEL[l.segment] || l.segment} ${l.hours}h`}
+                      color={leaveStyle(t, l.category).color}
+                      soft={leaveStyle(t, l.category).soft}
+                    />
                     {locked ? null : <Button label="취소" variant="neutral" small onPress={() => delLeave(l.id)} />}
                   </Row>
                 ))
               )}
               {locked ? (
-                <Muted size={12} style={{ color: t.danger }}>🔒 잠긴 주간이라 연차를 추가·취소할 수 없습니다.</Muted>
+                <Muted size={12} style={{ color: t.danger }}>🔒 잠긴 주간이라 휴가를 추가·취소할 수 없습니다.</Muted>
               ) : (
                 <>
-                  <Muted size={11}>연차 추가 (즉시 승인)</Muted>
+                  <Muted size={11}>휴가 종류 선택 후 아래 버튼을 누르면 즉시 승인 등록됩니다.</Muted>
                   <Row style={{ flexWrap: 'wrap' }}>
-                    <Chip label="종일 8h" color={t.trip} onPress={() => addLeave('FULL', 8)} small />
-                    <Chip label="오전 4h" color={t.trip} onPress={() => addLeave('AM', 4)} small />
-                    <Chip label="오후 4h" color={t.trip} onPress={() => addLeave('PM', 4)} small />
-                    <Chip label="오전 2h" color={t.trip} onPress={() => addLeave('AM', 2)} small />
-                    <Chip label="오후 2h" color={t.trip} onPress={() => addLeave('PM', 2)} small />
+                    {(['ANNUAL', 'PAID', 'UNPAID'] as LeaveCategory[]).map((c) => (
+                      <Chip
+                        key={c}
+                        label={`${LEAVE_CATEGORY_ICONS[c]} ${leaveCategoryLabel(c)}`}
+                        active={leaveCat === c}
+                        color={leaveStyle(t, c).color}
+                        onPress={() => setLeaveCat(c)}
+                        small
+                      />
+                    ))}
+                  </Row>
+                  <Muted size={11} style={{ color: leaveStyle(t, leaveCat).color }}>{LEAVE_CATEGORY_NOTES[leaveCat]}</Muted>
+                  <Field
+                    label="사유 (선택)"
+                    value={leaveReason}
+                    onChangeText={setLeaveReason}
+                    placeholder={leaveCat === 'ANNUAL' ? '예: 본인 요청' : leaveCat === 'PAID' ? '예: 예비군' : '예: 개인사정'}
+                  />
+                  <Row style={{ flexWrap: 'wrap' }}>
+                    {([
+                      ['종일 8h', 'FULL', 8],
+                      ['오전 4h', 'AM', 4],
+                      ['오후 4h', 'PM', 4],
+                      ['오전 2h', 'AM', 2],
+                      ['오후 2h', 'PM', 2],
+                    ] as [string, LeaveSegment, LeaveUnit][]).map(([label, seg, h]) => (
+                      <Chip key={label} label={label} color={leaveStyle(t, leaveCat).color} onPress={() => addLeave(seg, h)} small />
+                    ))}
                   </Row>
                 </>
               )}

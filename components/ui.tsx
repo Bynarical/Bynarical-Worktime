@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { RADIUS, useTheme, Theme } from '@/lib/theme';
+import type { MarkerShape } from '@/lib/palette';
 
 export { useTheme } from '@/lib/theme';
 
@@ -118,7 +119,8 @@ export function Body({ children, style }: { children: React.ReactNode; style?: a
   return <Text style={[{ color: t.text, fontSize: 15, lineHeight: 22 }, style]}>{children}</Text>;
 }
 
-type BtnVariant = 'primary' | 'success' | 'danger' | 'warning' | 'neutral' | 'trip' | 'outline';
+// 휴가 계열 변형(annual/paid/unpaid)은 lib/palette.ts 색 규칙을 따른다. trip=출장.
+type BtnVariant = 'primary' | 'success' | 'danger' | 'warning' | 'neutral' | 'trip' | 'annual' | 'paid' | 'unpaid' | 'outline';
 
 export function Button({
   label,
@@ -145,6 +147,9 @@ export function Button({
     danger: t.danger,
     warning: t.warning,
     trip: t.trip,
+    annual: t.leaveAnnual,
+    paid: t.leavePaid,
+    unpaid: t.leaveUnpaid,
   };
   const isGradient = variant === 'primary';
   const isOutline = variant === 'outline';
@@ -215,6 +220,34 @@ export function Field({
       />
     </View>
   );
+}
+
+// 상태 마커 — 색만이 아니라 모양으로도 구분(색약 대비). lib/palette.ts 의 tone().marker와 짝.
+export function Marker({ shape, color, size = 7 }: { shape: MarkerShape; color: string; size?: number }) {
+  if (shape === 'triangle') {
+    // CSS 삼각형(테두리 트릭) — RN/웹 공통 동작
+    return (
+      <View
+        style={{
+          width: 0,
+          height: 0,
+          borderLeftWidth: size / 2 + 0.5,
+          borderRightWidth: size / 2 + 0.5,
+          borderBottomWidth: size,
+          borderLeftColor: 'transparent',
+          borderRightColor: 'transparent',
+          borderBottomColor: color,
+          backgroundColor: 'transparent',
+        }}
+      />
+    );
+  }
+  if (shape === 'square') return <View style={{ width: size, height: size, borderRadius: 1.5, backgroundColor: color }} />;
+  if (shape === 'hollowSquare')
+    return (
+      <View style={{ width: size, height: size, borderRadius: 1.5, borderWidth: 1.5, borderColor: color, backgroundColor: 'transparent' }} />
+    );
+  return <View style={{ width: size - 1, height: size - 1, borderRadius: size, backgroundColor: color }} />;
 }
 
 export function Badge({ text, color, soft }: { text: string; color?: string; soft?: string }) {
