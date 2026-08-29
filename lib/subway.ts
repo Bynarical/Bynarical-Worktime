@@ -94,48 +94,42 @@ export interface TimetableResult {
   cached?: boolean;
   at?: number; // 시간표를 조회(또는 캐시)한 시각(ms). 신선도 표시·자동갱신 판단용.
   error?: string;
+  // 호출은 정상인데 TAGO에 그 역·노선 시간표 데이터 자체가 없는 경우(=우리 오류 아님).
+  // 빨간 오류 대신 안내 문구로 보여주려고 구분한다.
+  empty?: boolean;
+  // 갱신 주기(1주일)가 지난 저장본을 보여주는 중 — 뒤에서 조용히 새로 받고 있다.
+  stale?: boolean;
 }
 
-// 역 시간표(요일별, 상·하행 모두). 성공 시 캐시. 오프라인/오류 시 캐시로 폴백.
-// opts.force=true 면 캐시가 신선해도 서버에서 다시 받아 캐시를 갱신한다(수동 새로고침).
-export async function fetchTimetable(
+const cacheKeyOf = (stationId: string, daily: DailyType) => `${STORAGE_KEYS.SUBWAY_SCHED}_${stationId}_${daily}`;
+
+// 같은 키를 동시에 여러 번 갱신하지 않도록(백그라운드 갱신 + 화면 진입이 겹칠 때) 진행 중 표시
+const inFlight = new Set<string>();
+
+// 서버(Edge Function → TAGO)에서 한 역·요일치 시간표를 받아온다. 캐시는 건드리지 않는다.
+async function loadFromServer(
   station: SubwayStation,
   daily: DailyType,
-  opts: { force?: boolean } = {}
-): Promise<TimetableResult> {
-  const cacheKey = `${STORAGE_KEYS.SUBWAY_SCHED}_${station.id}_${daily}`;
-  const cached = await getItem<CacheEnvelope<Train[]>>(cacheKey);
-  const fresh = cached && new Date().getTime() - cached.at < SUBWAY_CACHE_TTL;
-  if (fresh && !opts.force) return { ok: true, trains: cached!.data, cached: true, at: cached!.at };
-
-  if (!supabase) {
-    if (cached) return { ok: true, trains: cached.data, cached: true, at: cached.at };
-    return { ok: false, error: '백엔드가 설정되지 않아 시간표를 가져올 수 없습니다.' };
-  }
-
-  const ids = await resolveStationIds(station, opts.force);
+  force = false
+): Promise<{ trains: Train[]; error: string; okCalls: number }> {
+  if (!supabase) return { trains: [], error: '백엔드가 설정되지 않아 시간표를 가져올 수 없습니다.', okCalls: 0 };
+  const ids = await resolveStationIds(station, force);
   if (!ids.length) {
-    if (cached) return { ok: true, trains: cached.data, cached: true, at: cached.at };
-    return { ok: false, error: '해당 역의 시간표 정보를 찾을 수 없습니다. (지방 노선은 미제공일 수 있음)' };
+    return { trains: [], error: '해당 역의 시간표 정보를 찾을 수 없습니다. (지방 노선은 미제공일 수 있음)', okCalls: 0 };
   }
-
   const all: Train[] = [];
   let anyError = '';
+  let okCalls = 0; // 정상 응답(오류 없이 돌아온) 횟수 — 0건이 '데이터 없음'인지 '조회 실패'인지 구분
   for (const s of ids) {
     const { data, error } = await supabase.functions.invoke('subway-timetable', {
       body: { action: 'schedule', stationId: s.id, daily },
     });
     if (error) { anyError = '시간표 함수를 호출하지 못했습니다. (Edge Function 배포 확인)'; continue; }
     if (data && (data as any).ok === false) { anyError = (data as any).error || '시간표 조회 실패'; continue; }
+    okCalls += 1;
     const trains = ((data as any).trains || []) as Train[];
     all.push(...trains.map((tr) => ({ ...tr, route: tr.route || s.route })));
   }
-
-  if (!all.length) {
-    if (cached) return { ok: true, trains: cached.data, cached: true, at: cached.at };
-    return { ok: false, error: anyError || '시간표가 비어 있습니다.' };
-  }
-
   // 시간·방향·종착 기준 중복 제거 후 정렬
   const seen = new Set<string>();
   const dedup = all.filter((tr) => {
@@ -145,9 +139,91 @@ export async function fetchTimetable(
     return true;
   });
   dedup.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  return { trains: dedup, error: anyError, okCalls };
+}
+
+// 받아온 시간표를 저장. 빈 결과는 저장하지 않는다(있던 시간표를 빈 값으로 덮어쓰지 않게).
+async function saveCache(stationId: string, daily: DailyType, trains: Train[]): Promise<number> {
   const at = new Date().getTime();
-  await setItem(cacheKey, { at, data: dedup } as CacheEnvelope<Train[]>);
-  return { ok: true, trains: dedup, at };
+  if (trains.length > 0) await setItem(cacheKeyOf(stationId, daily), { at, data: trains } as CacheEnvelope<Train[]>);
+  return at;
+}
+
+// 백그라운드 갱신(실패해도 조용히 무시 — 화면엔 저장된 시간표가 이미 떠 있다)
+function refreshInBackground(station: SubwayStation, daily: DailyType) {
+  const key = cacheKeyOf(station.id, daily);
+  if (inFlight.has(key)) return;
+  inFlight.add(key);
+  loadFromServer(station, daily)
+    .then((r) => saveCache(station.id, daily, r.trains))
+    .catch(() => {})
+    .finally(() => inFlight.delete(key));
+}
+
+// 나머지 요일(평일/토/일) 시간표도 미리 받아 저장해 둔다.
+// 주말에 서버가 죽어도 토·일 시간표가 남아 있게 하려는 것(1주일에 한 번만 수행).
+function prefetchOtherDailyTypes(station: SubwayStation, current: DailyType) {
+  const others = (['01', '02', '03'] as DailyType[]).filter((d) => d !== current);
+  others.forEach(async (d) => {
+    const key = cacheKeyOf(station.id, d);
+    if (inFlight.has(key)) return;
+    const c = await getItem<CacheEnvelope<Train[]>>(key);
+    if (c && c.data?.length && new Date().getTime() - c.at < SUBWAY_CACHE_TTL) return; // 아직 신선
+    inFlight.add(key);
+    loadFromServer(station, d)
+      .then((r) => saveCache(station.id, d, r.trains))
+      .catch(() => {})
+      .finally(() => inFlight.delete(key));
+  });
+}
+
+// 역 시간표(요일별, 상·하행 모두).
+//  - 저장된 시간표가 있으면 항상 그것을 먼저 보여준다(서버·TAGO가 죽어도 화면이 비지 않게).
+//  - 저장본이 1주일(SUBWAY_CACHE_TTL)보다 오래됐으면 화면은 그대로 두고 뒤에서 조용히 갱신한다.
+//  - 저장본은 만료로 지우지 않는다. 갱신에 실패하면 이전 시간표를 계속 쓴다.
+//  - opts.force=true(수동 새로고침)면 기다렸다가 새로 받은 결과를 돌려준다.
+export async function fetchTimetable(
+  station: SubwayStation,
+  daily: DailyType,
+  opts: { force?: boolean } = {}
+): Promise<TimetableResult> {
+  const key = cacheKeyOf(station.id, daily);
+  const cached = await getItem<CacheEnvelope<Train[]>>(key);
+  const hasCache = !!cached && !!cached.data?.length;
+  const fresh = hasCache && new Date().getTime() - cached!.at < SUBWAY_CACHE_TTL;
+
+  if (hasCache && !opts.force) {
+    if (!fresh) refreshInBackground(station, daily); // 1주일 지남 → 뒤에서 갱신
+    prefetchOtherDailyTypes(station, daily);
+    return { ok: true, trains: cached!.data, cached: true, at: cached!.at, stale: !fresh };
+  }
+
+  // 저장본이 없거나 수동 새로고침 → 서버에서 받아온다
+  inFlight.add(key);
+  let res: { trains: Train[]; error: string; okCalls: number };
+  try {
+    res = await loadFromServer(station, daily, opts.force);
+  } finally {
+    inFlight.delete(key);
+  }
+
+  if (!res.trains.length) {
+    // 새로 받지 못했으면 저장본으로 폴백(있으면). 없으면 사유를 알려준다.
+    if (hasCache) return { ok: true, trains: cached!.data, cached: true, at: cached!.at, stale: true };
+    if (res.okCalls > 0 && !res.error) {
+      return {
+        ok: false,
+        empty: true,
+        error:
+          '국토교통부(TAGO) 공공데이터에 이 역 시간표가 없습니다. 일부 역·노선은 제공되지 않으며(예: 5·9호선 일부 역), 같은 역의 다른 노선이나 인접 역은 조회될 수 있습니다.',
+      };
+    }
+    return { ok: false, error: res.error || '시간표가 비어 있습니다.' };
+  }
+
+  const at = await saveCache(station.id, daily, res.trains);
+  prefetchOtherDailyTypes(station, daily);
+  return { ok: true, trains: res.trains, at };
 }
 
 // ---- 조회 도우미 ----

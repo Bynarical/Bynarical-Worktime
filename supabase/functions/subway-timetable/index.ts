@@ -65,10 +65,27 @@ function itemsOf(data: any): any[] {
   return Array.isArray(items.item) ? items.item : [items.item];
 }
 
-async function callTago(op: string, params: Record<string, string>): Promise<any[]> {
-  const qs = new URLSearchParams({ serviceKey: params.serviceKey, _type: 'json', numOfRows: '200', pageNo: '1', ...params });
+
+// TAGO 는 혼잡할 때 rc 99 "가용한 세션이 존재하지 않습니다.(30/30)" 처럼 일시적 오류를 낸다.
+// 한 번 실패했다고 화면을 비우지 말고 짧게 백오프하며 재시도한다(실측: 4회 중 1회꼴 발생).
+function isTransient(msg: string): boolean {
+  return (
+    /가용한 세션/.test(msg) ||
+    /^TAGO (99|04|20|31)/.test(msg) ||
+    /응답 파싱 실패/.test(msg) ||
+    /HTTP (5\d\d|429)/.test(msg) ||
+    /fetch|network|timeout|abort/i.test(msg)
+  );
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function callTagoOnce(op: string, params: Record<string, string>): Promise<any[]> {
+  // numOfRows: 한 역·한 방향의 하루 편성은 200편을 넘는다(2호선 등). 200으로 자르면
+  // 저녁 이후 열차와 막차가 통째로 빠지므로 넉넉히 1000으로 받는다.
+  const qs = new URLSearchParams({ serviceKey: params.serviceKey, _type: 'json', numOfRows: '1000', pageNo: '1', ...params });
   const res = await fetch(`${BASE}/${op}?${qs.toString()}`);
   const text = await res.text();
+  if (!res.ok && !text.trim().startsWith('{')) throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
   let data: any;
   try {
     data = JSON.parse(text);
@@ -76,6 +93,21 @@ async function callTago(op: string, params: Record<string, string>): Promise<any
     throw new Error(`TAGO 응답 파싱 실패(키/승인 확인): ${text.slice(0, 160)}`);
   }
   return itemsOf(data);
+}
+
+async function callTago(op: string, params: Record<string, string>): Promise<any[]> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await callTagoOnce(op, params);
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message || e);
+      if (!isTransient(msg) || attempt === 2) throw e;
+      await sleep(300 * (attempt + 1) + Math.floor(Math.random() * 200));
+    }
+  }
+  throw lastErr;
 }
 
 Deno.serve(async (req) => {
@@ -127,7 +159,9 @@ Deno.serve(async (req) => {
         });
         for (const it of items) {
           const time = toHM(pick(it, 'depTime', 'arrTime', 'depArrivalTime', 'arrivalTime'));
-          if (!time) continue;
+          // TAGO 응답엔 시각이 "0" 같은 쓰레기 행이 섞여 온다(종착 처리 행으로 추정).
+          // 그대로 두면 첫차가 "0"으로 표시되므로 HH:MM 형식이 아닌 건 버린다.
+          if (!/^\d{2}:\d{2}$/.test(time)) continue;
           trains.push({
             time,
             dir: up,

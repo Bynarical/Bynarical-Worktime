@@ -805,7 +805,11 @@ function TimetableCard({ station, onClose, fav }: { station: SubwayStation; onCl
       <Divider />
 
       <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <Muted size={11}>{res?.at ? agoLabel(res.at) + (res.cached ? ' · 캐시' : '') : ''}</Muted>
+        {/* 저장된 시간표는 서버가 죽어도 계속 보인다. 오래된 저장본이면 뒤에서 갱신 중임을 알린다. */}
+        <Muted size={11}>
+          {res?.at ? agoLabel(res.at) + (res.cached ? ' · 저장된 시간표' : '') : ''}
+          {res?.stale ? ' · 갱신 중' : ''}
+        </Muted>
         <Button label="새로고침" icon="🔄" variant="outline" small onPress={refresh} loading={refreshing} />
       </Row>
 
@@ -819,7 +823,11 @@ function TimetableCard({ station, onClose, fav }: { station: SubwayStation; onCl
       {loading ? (
         <Muted size={13}>시간표 불러오는 중...</Muted>
       ) : !res?.ok ? (
-        <Muted size={12} style={{ color: t.danger }}>{res?.error || '시간표를 불러오지 못했습니다.'}</Muted>
+        // TAGO에 데이터가 없는 경우(res.empty)는 우리 오류가 아니므로 빨간색 대신 안내로 표시
+        <Muted size={12} style={{ color: res?.empty ? t.textDim : t.danger }}>
+          {res?.empty ? 'ℹ️ ' : ''}
+          {res?.error || '시간표를 불러오지 못했습니다.'}
+        </Muted>
       ) : trains.length === 0 ? (
         <Muted size={12}>시간표 데이터가 없습니다.</Muted>
       ) : (
