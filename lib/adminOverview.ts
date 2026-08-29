@@ -23,7 +23,8 @@ export interface EmployeeOverview {
   };
   pendingLeaveCount: number;
   unsignedWeeks: number; // 기록이 있으나 서명 안 된 주 수
-  anomalyDays: number; // 이번 달 지각/코어위반/부족/미기록 발생 일수
+  anomalyDays: number; // 이번 달 지각/코어위반/부족/미기록 발생 일수 (관리자가 확인한 날은 제외)
+  reviewedAnomalyDays: number; // 그중 관리자가 이미 확인 처리한 일수
   mealTotal: number; // 이번 달 저녁식대 합계(원) — 내부 참조용
   mealDays: number; // 이번 달 야근식대 먹은 일수
   hasWarning: boolean;
@@ -39,6 +40,8 @@ export interface OverviewInput {
   workPolicy: WorkPolicy;
   leavePolicy: LeavePolicy;
   holidays?: Set<string>; // 공휴일(80% 판정용)
+  // 이상징후 확인 완료 키 `${userId}|${date}` — 확인한 날은 경고에서 제외한다.
+  anomalyReviewKeys?: Set<string>;
   monthPrefix: string; // 'YYYY-MM'
   today: string; // 'YYYY-MM-DD'
   nowMin: number; // 현재 분(오늘 진행중 근로 계산)
@@ -62,9 +65,13 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     return computeDay(rec, dayLeaves, inp.workPolicy, opts);
   });
   const month = summarize(comps, recs);
-  const anomalyDays = comps.filter(
+  // 이상징후 일수 — 관리자가 확인 처리한 날은 경고에서 뺀다(집계 숫자 month.*는 그대로 유지).
+  const anomalyComps = comps.filter(
     (c) => c.flags.late || c.flags.coreViolation || c.flags.insufficient || c.flags.missingClockOut
-  ).length;
+  );
+  const reviewed = inp.anomalyReviewKeys ?? new Set<string>();
+  const reviewedAnomalyDays = anomalyComps.filter((c) => reviewed.has(`${id}|${c.date}`)).length;
+  const anomalyDays = anomalyComps.length - reviewedAnomalyDays;
 
   // 오늘 상태
   const todayRec = recs.find((r) => r.date === inp.today);
@@ -129,6 +136,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     pendingLeaveCount,
     unsignedWeeks,
     anomalyDays,
+    reviewedAnomalyDays,
     mealTotal,
     mealDays,
     hasWarning,

@@ -4,7 +4,8 @@ import { Card, Button, Field, Chip, Row, Badge, Divider, Muted, Body } from './u
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { confirmationCovering } from '@/lib/confirmation';
-import { timeHM, hmToMinutes, minutesToHM, ceilToStep } from '@/lib/time';
+import { computeDay } from '@/lib/attendance';
+import { dateKey, timeHM, hmToMinutes, minutesToHM, ceilToStep } from '@/lib/time';
 import { LEAVE_CATEGORY_ICONS, LEAVE_CATEGORY_NOTES, leaveCategoryLabel } from '@/lib/leave';
 import { leaveStyle } from '@/lib/palette';
 import { AttendanceType, LeaveCategory, LeaveSegment, LeaveUnit } from '@/lib/types';
@@ -56,6 +57,7 @@ export function AdminDayEditor({
   // 직원이 확인·서명한 주간이면 근무기록·연차는 잠금(관리자도 수정 불가). DB 트리거로도 강제됨.
   const lockConf = confirmationCovering(s.confirmations, userId, date);
   const locked = !!lockConf;
+  const reviewed = s.anomalyReviews.find((r) => r.userId === userId && r.date === date);
 
   const [cin, setCin] = useState(rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '');
   const [cout, setCout] = useState(rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '');
@@ -244,6 +246,43 @@ export function AdminDayEditor({
                   </Row>
                 </>
               )}
+
+              <Divider />
+              {(() => {
+                // 이상징후 확인 — 관리자가 확인한 날은 대시보드·목록에서 경고가 가라앉는다.
+                // (근태점수 감점과 월 집계 숫자는 사실대로 그대로 유지)
+                const comp = computeDay(rec, dayLeaves, policy, { dateStr: date, todayStr: dateKey() });
+                const anomalies = comp.labels.filter((l) => /부족|미충족|지각|미기록/.test(l));
+                if (anomalies.length === 0) return null;
+                return (
+                  <>
+                    <Text style={{ fontWeight: '700', color: t.text }}>
+                      이상징후 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(확인하면 경고 표시만 가라앉음)</Text>
+                    </Text>
+                    <Row style={{ flexWrap: 'wrap' }}>
+                      {anomalies.map((l) => (
+                        <Badge key={l} text={l} color={reviewed ? t.textFaint : t.danger} />
+                      ))}
+                    </Row>
+                    {reviewed ? (
+                      <>
+                        <Muted size={12} style={{ color: t.textDim }}>
+                          ✔ {reviewed.reviewedBy || '관리자'} 확인 완료
+                          {reviewed.reviewedAt ? ` · ${reviewed.reviewedAt.slice(0, 10)}` : ''}
+                        </Muted>
+                        <Button label="확인 해제" variant="neutral" small onPress={() => s.adminUnreviewAnomaly(userId, date)} />
+                      </>
+                    ) : (
+                      <>
+                        <Muted size={11}>
+                          사유를 확인했거나 조치를 마친 건이면 확인 처리하세요. 근태점수·집계 숫자는 그대로 유지되고, 관리자 화면의 경고 표시만 조용해집니다.
+                        </Muted>
+                        <Button label="✔ 이상징후 확인" variant="outline" small onPress={() => s.adminReviewAnomaly(userId, date)} />
+                      </>
+                    )}
+                  </>
+                );
+              })()}
 
               <Divider />
               <Text style={{ fontWeight: '700', color: t.text }}>무단이탈 <Text style={{ color: t.textFaint, fontWeight: '400', fontSize: 13 }}>(점수 감점)</Text></Text>

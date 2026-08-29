@@ -14,6 +14,7 @@ import {
   Holiday,
   MealAllowance,
   AwayLog,
+  AnomalyReview,
   LocationConsent,
 } from './types';
 
@@ -343,6 +344,46 @@ export async function upsertAwayLog(a: AwayLog, userId: string) {
 }
 export async function deleteAwayLog(id: string) {
   const { error } = await sb().from('away_logs').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ---------- 이상징후 관리자 확인 ----------
+// anomaly_reviews 테이블(supabase/anomaly_review.sql)이 아직 없거나 권한이 없으면
+// 조용히 빈 목록으로 동작한다(기능이 없던 상태와 동일 — 앱이 깨지지 않게).
+// 테이블이 없거나 권한이 없으면 null — 호출부가 로컬 캐시를 그대로 유지하도록(빈 배열로 덮어쓰지 않게).
+export async function fetchAnomalyReviews(): Promise<AnomalyReview[] | null> {
+  const { data, error } = await sb().from('anomaly_reviews').select('*');
+  if (error) {
+    console.warn('anomaly_reviews fetch (supabase/anomaly_review.sql 적용 필요?)', error.message);
+    return null;
+  }
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    userId: r.user_id,
+    date: r.date,
+    reviewedBy: r.reviewed_by || undefined,
+    reviewedAt: r.reviewed_at || undefined,
+    note: r.note || undefined,
+  }));
+}
+export async function upsertAnomalyReview(r: AnomalyReview) {
+  const { error } = await sb()
+    .from('anomaly_reviews')
+    .upsert(
+      {
+        id: r.id,
+        user_id: r.userId,
+        date: r.date,
+        reviewed_by: r.reviewedBy ?? null,
+        reviewed_at: r.reviewedAt ?? new Date().toISOString(),
+        note: r.note ?? null,
+      },
+      { onConflict: 'user_id,date' }
+    );
+  if (error) throw error;
+}
+export async function deleteAnomalyReview(userId: string, date: string) {
+  const { error } = await sb().from('anomaly_reviews').delete().eq('user_id', userId).eq('date', date);
   if (error) throw error;
 }
 

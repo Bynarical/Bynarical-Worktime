@@ -77,6 +77,17 @@ export default function Approvals() {
 
   const summary = useMemo(() => summarize(dayRows.map((r) => r.comp), dayRows.map((r) => r.rec).filter(Boolean) as AttendanceRecord[]), [dayRows]);
 
+  // 이 직원의 '이상징후 확인 완료' 날짜들 — 확인한 날은 경고 표시를 가라앉힌다(집계·점수는 그대로).
+  const reviewedDates = useMemo(
+    () => new Set(s.anomalyReviews.filter((r) => r.userId === viewId).map((r) => r.date)),
+    [s.anomalyReviews, viewId]
+  );
+  function toggleReview(date: string, reviewed: boolean) {
+    if (!viewId) return;
+    if (reviewed) s.adminReviewAnomaly(viewId, date);
+    else s.adminUnreviewAnomaly(viewId, date);
+  }
+
   // 선택 직원 연간 근태 점수(올해)
   const curYear = parseInt(dateKey().slice(0, 4), 10);
   const yearScore = useMemo(
@@ -244,7 +255,16 @@ export default function Approvals() {
           </Row>
 
           {dayView === 'calendar' ? (
-            <AttendanceCalendar userId={viewId} records={s.records} leaves={s.leaves} policy={policy} holidays={s.holidays} onEditDay={setEditDate} />
+            <AttendanceCalendar
+              userId={viewId}
+              records={s.records}
+              leaves={s.leaves}
+              policy={policy}
+              holidays={s.holidays}
+              onEditDay={setEditDate}
+              reviewedDates={reviewedDates}
+              onToggleReview={toggleReview}
+            />
           ) : (
             <>
               {dayRows.length === 0 && <Card><Muted>이 달의 기록이 없습니다</Muted></Card>}
@@ -252,7 +272,17 @@ export default function Approvals() {
                 const cf = confirmationCovering(s.confirmations, viewId, r.date);
                 const tampered = !!cf && verifyConfirmation(cf, s.records, s.leaves) === 'tampered';
                 return (
-                  <DayCard key={r.date} date={r.date} rec={r.rec} comp={r.comp} locked={!!cf} tampered={tampered} onEdit={() => setEditDate(r.date)} />
+                  <DayCard
+                    key={r.date}
+                    date={r.date}
+                    rec={r.rec}
+                    comp={r.comp}
+                    locked={!!cf}
+                    tampered={tampered}
+                    reviewed={reviewedDates.has(r.date)}
+                    onToggleReview={toggleReview}
+                    onEdit={() => setEditDate(r.date)}
+                  />
                 );
               })}
             </>
@@ -267,15 +297,35 @@ export default function Approvals() {
   );
 }
 
-function DayCard({ date, rec, comp, locked, tampered, onEdit }: { date: string; rec?: AttendanceRecord; comp: DayComputation; locked?: boolean; tampered?: boolean; onEdit?: () => void }) {
+function DayCard({
+  date,
+  rec,
+  comp,
+  locked,
+  tampered,
+  reviewed,
+  onToggleReview,
+  onEdit,
+}: {
+  date: string;
+  rec?: AttendanceRecord;
+  comp: DayComputation;
+  locked?: boolean;
+  tampered?: boolean;
+  reviewed?: boolean;
+  onToggleReview?: (date: string, reviewed: boolean) => void;
+  onEdit?: () => void;
+}) {
   const t = useTheme();
   const wd = ['일', '월', '화', '수', '목', '금', '토'][new Date(date + 'T00:00:00Z').getUTCDay()];
+  const hasAnomaly = comp.flags.late || comp.flags.coreViolation || comp.flags.insufficient || comp.flags.missingClockOut;
   return (
     <Card>
       <Row style={{ justifyContent: 'space-between' }}>
         <Row style={{ gap: 6, alignItems: 'center' }}>
           <Body style={{ fontWeight: '700' }}>{date} ({wd})</Body>
           {tampered ? <Badge text="⚠ 서명 후 변경됨" color={t.danger} soft={t.dangerSoft} /> : locked ? <Badge text="🔒 확정" color={t.textDim} /> : null}
+          {reviewed ? <Badge text="✔ 확인함" color={t.textFaint} /> : null}
         </Row>
         {comp.isFullLeave ? (
           <Badge
@@ -298,11 +348,19 @@ function DayCard({ date, rec, comp, locked, tampered, onEdit }: { date: string; 
       {comp.labels.length > 0 && (
         <Row style={{ flexWrap: 'wrap' }}>
           {comp.labels.map((l) => (
-            <Badge key={l} text={l} color={labelColor(t, l)} />
+            <Badge key={l} text={l} color={reviewed ? t.textFaint : labelColor(t, l)} />
           ))}
         </Row>
       )}
       {rec?.hash ? <Muted size={11}>해시 {shortHash(rec.hash)}</Muted> : null}
+      {onToggleReview && hasAnomaly ? (
+        <Button
+          label={reviewed ? '확인 해제' : '✔ 이상징후 확인'}
+          variant={reviewed ? 'neutral' : 'outline'}
+          small
+          onPress={() => onToggleReview(date, !reviewed)}
+        />
+      ) : null}
       {onEdit ? <Button label={locked ? '🔒 열람' : '✏️ 근태 수정'} variant="outline" small onPress={onEdit} /> : null}
     </Card>
   );

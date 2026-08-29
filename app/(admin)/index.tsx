@@ -60,6 +60,7 @@ export default function AdminDashboard() {
       workPolicy: s.settings.workPolicy,
       leavePolicy: s.settings.leavePolicy,
       holidays: s.holidaySet,
+      anomalyReviewKeys: s.anomalyReviewKeys,
       monthPrefix,
       today,
       nowMin: minutesOfDay(Date.now()),
@@ -71,7 +72,7 @@ export default function AdminDashboard() {
       if (a.hasWarning !== b.hasWarning) return a.hasWarning ? -1 : 1;
       return a.name.localeCompare(b.name, 'ko');
     });
-  }, [s.profilesById, s.records, s.leaves, s.adjustments, s.confirmations, s.meals, s.settings, s.holidaySet, monthPrefix, today, s.user]);
+  }, [s.profilesById, s.records, s.leaves, s.adjustments, s.confirmations, s.meals, s.settings, s.holidaySet, s.anomalyReviewKeys, monthPrefix, today, s.user]);
 
   const presentCount = overviews.filter((o) => o.today.status === 'WORKING' || o.today.status === 'DONE').length;
   const missingHire = overviews.filter((o) => !o.hireDate).length;
@@ -267,9 +268,10 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
       </Row>
 
       {/* 경고 뱃지 */}
-      {(o.anomalyDays > 0 || o.unsignedWeeks > 0 || o.pendingLeaveCount > 0 || (!o.isAdmin && !o.hireDate)) && (
+      {(o.anomalyDays > 0 || o.reviewedAnomalyDays > 0 || o.unsignedWeeks > 0 || o.pendingLeaveCount > 0 || (!o.isAdmin && !o.hireDate)) && (
         <Row style={{ flexWrap: 'wrap', gap: 6 }}>
           {o.anomalyDays > 0 && <Badge text={`이상 ${o.anomalyDays}일`} color={t.danger} />}
+          {o.reviewedAnomalyDays > 0 && <Badge text={`✔ 확인함 ${o.reviewedAnomalyDays}일`} color={t.textFaint} />}
           {o.unsignedWeeks > 0 && <Badge text={`미서명 ${o.unsignedWeeks}주`} color={t.textDim} />}
           {o.pendingLeaveCount > 0 && <Badge text={`휴가대기 ${o.pendingLeaveCount}건`} color={t.warning} />}
           {!o.isAdmin && !o.hireDate && <Badge text="입사일 미등록" color={t.warning} />}
@@ -290,6 +292,8 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           <KV k="정상근무 / 소정근무" v={`${o.month.normalDays}일 / ${o.month.scheduledDays}일`} />
           <KV k="지각" v={`${o.month.lateCount}회`} />
           <KV k="코어타임 위반" v={`${o.month.coreViolationCount}회`} />
+          <KV k="미확인 이상징후" v={o.anomalyDays > 0 ? `${o.anomalyDays}일` : '없음'} />
+          {o.reviewedAnomalyDays > 0 && <KV k="확인 처리한 이상징후" v={`${o.reviewedAnomalyDays}일`} />}
           <KV k="조기퇴근" v={`${o.month.earlyLeaveCount}회`} />
           <KV k="퇴근 미기록" v={`${o.month.missingCount}회`} />
           <KV k="출장" v={`${o.month.tripCount}회`} />

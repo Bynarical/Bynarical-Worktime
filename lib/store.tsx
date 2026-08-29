@@ -20,6 +20,7 @@ import {
   Holiday,
   MealAllowance,
   AwayLog,
+  AnomalyReview,
   LocationConsent,
 } from './types';
 import { chainHash } from './hash';
@@ -76,6 +77,9 @@ interface StoreValue {
   holidaySet: Set<string>;
   meals: MealAllowance[];
   awayLogs: AwayLog[];
+  // 이상징후 관리자 확인 — key `${userId}|${date}`
+  anomalyReviews: AnomalyReview[];
+  anomalyReviewKeys: Set<string>;
   consents: LocationConsent[];
   adminUnlocked: boolean;
 
@@ -128,6 +132,9 @@ interface StoreValue {
   // 관리자: 무단이탈 기록 추가/삭제
   adminAddAway: (userId: string, a: { date: string; startTime?: string; endTime?: string; minutes: number; note?: string }) => Promise<void>;
   adminDeleteAway: (id: string) => Promise<void>;
+  // 관리자: 이상징후 확인 처리 / 되돌리기 (표시만 가라앉힘 — 점수·집계는 그대로)
+  adminReviewAnomaly: (userId: string, date: string, note?: string) => Promise<void>;
+  adminUnreviewAnomaly: (userId: string, date: string) => Promise<void>;
   recordConsent: () => Promise<{ ok: boolean; error?: string }>;
   updateWorkPolicy: (patch: Partial<WorkPolicy>) => Promise<void>;
   updateLeavePolicy: (patch: Partial<LeavePolicy>) => Promise<void>;
@@ -155,6 +162,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [meals, setMeals] = useState<MealAllowance[]>([]);
   const [awayLogs, setAwayLogs] = useState<AwayLog[]>([]);
+  const [anomalyReviews, setAnomalyReviews] = useState<AnomalyReview[]>([]);
   const [consents, setConsents] = useState<LocationConsent[]>([]);
   // 초기 비밀번호에서 한 번이라도 변경했는지 (auth user_metadata.password_changed)
   const [passwordChanged, setPasswordChanged] = useState(true);
@@ -186,6 +194,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (cAdj) setAdjustments(cAdj);
       const cAway = await getItem<AwayLog[]>(STORAGE_KEYS.AWAY);
       if (cAway) setAwayLogs(cAway);
+      const cReview = await getItem<AnomalyReview[]>(STORAGE_KEYS.ANOMALY_REVIEWS);
+      if (cReview) setAnomalyReviews(cReview);
 
       if (!supabase) {
         setReady(true);
@@ -213,6 +223,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           setAdjustments([]);
           setMeals([]);
           setAwayLogs([]);
+          setAnomalyReviews([]);
           setConsents([]);
         }
       });
@@ -221,7 +232,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function loadAll(userId: string) {
-    const [me, pmap, recs, lvs, confs, wps, pol, adjs, hols, mealsData, consentsData, awayData] = await Promise.all([
+    const [me, pmap, recs, lvs, confs, wps, pol, adjs, hols, mealsData, consentsData, awayData, reviewData] = await Promise.all([
       api.fetchProfile(userId),
       api.fetchProfilesMap(),
       api.fetchRecords(),
@@ -234,6 +245,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       api.fetchMeals().catch(() => [] as MealAllowance[]),
       api.fetchConsents().catch(() => [] as LocationConsent[]),
       api.fetchAwayLogs().catch(() => [] as AwayLog[]),
+      api.fetchAnomalyReviews().catch(() => null),
     ]);
     const recs2 = recs.map((r) => ({ ...r, userName: pmap[r.userId]?.name, empNo: pmap[r.userId]?.empNo }));
     const lvs2 = lvs.map((l) => ({ ...l, userName: pmap[l.userId]?.name, empNo: pmap[l.userId]?.empNo }));
@@ -250,12 +262,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setHolidays(hols);
     setMeals(meals2);
     setAwayLogs(away2);
+    // reviewData=null → 테이블 미적용/권한 없음. 로컬 캐시를 지우지 않고 그대로 둔다.
+    if (reviewData) setAnomalyReviews(reviewData);
     setConsents(consentsData);
     // 캐시
     if (me) await setItem(STORAGE_KEYS.USER, me);
     await setItem(STORAGE_KEYS.CONSENTS, consentsData);
     await setItem(STORAGE_KEYS.MEALS, meals2);
     await setItem(STORAGE_KEYS.AWAY, away2);
+    if (reviewData) await setItem(STORAGE_KEYS.ANOMALY_REVIEWS, reviewData);
     await setItem(STORAGE_KEYS.HOLIDAYS, hols);
     await setItem(STORAGE_KEYS.RECORDS, recs2);
     await setItem(STORAGE_KEYS.LEAVES, lvs2);
@@ -773,6 +788,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase) await api.deleteAwayLog(id).catch((e) => console.warn('away del', e));
   };
 
+  // 관리자: 이상징후(지각·코어위반·부족·미기록) 확인 처리.
+  // 확인해도 근태점수·집계 숫자는 그대로고, 관리자 화면의 경고 표시만 가라앉는다.
+  const adminReviewAnomaly: StoreValue['adminReviewAnomaly'] = async (targetUserId, date, note) => {
+    const row: AnomalyReview = {
+      id: uid('arv'),
+      userId: targetUserId,
+      date,
+      reviewedBy: user?.name,
+      reviewedAt: new Date().toISOString(),
+      note,
+    };
+    setAnomalyReviews((prev) => {
+      const next = [...prev.filter((r) => !(r.userId === targetUserId && r.date === date)), row];
+      setItem(STORAGE_KEYS.ANOMALY_REVIEWS, next);
+      return next;
+    });
+    if (supabase) await api.upsertAnomalyReview(row).catch((e) => console.warn('anomaly review', e));
+  };
+  const adminUnreviewAnomaly: StoreValue['adminUnreviewAnomaly'] = async (targetUserId, date) => {
+    setAnomalyReviews((prev) => {
+      const next = prev.filter((r) => !(r.userId === targetUserId && r.date === date));
+      setItem(STORAGE_KEYS.ANOMALY_REVIEWS, next);
+      return next;
+    });
+    if (supabase) await api.deleteAnomalyReview(targetUserId, date).catch((e) => console.warn('anomaly unreview', e));
+  };
+
   // 위치정보 수집·이용 동의 기록 (IP는 Edge Function이 서버에서 캡처)
   const recordConsent = async () => {
     if (!supabase || !user) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
@@ -891,12 +933,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeMeal,
       adminAddAway,
       adminDeleteAway,
+      anomalyReviews,
+      anomalyReviewKeys: new Set(anomalyReviews.map((r) => `${r.userId}|${r.date}`)),
+      adminReviewAnomaly,
+      adminUnreviewAnomaly,
       recordConsent,
       updateWorkPolicy,
       updateLeavePolicy,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, needsConfig, authed, busy, user, settings, records, unsynced, leaves, adjustments, confirmations, profilesById, holidays, meals, awayLogs, consents, passwordChanged]
+    [ready, needsConfig, authed, busy, user, settings, records, unsynced, leaves, adjustments, confirmations, profilesById, holidays, meals, awayLogs, anomalyReviews, consents, passwordChanged]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

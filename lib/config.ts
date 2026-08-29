@@ -25,10 +25,14 @@ export const STORAGE_KEYS = {
   MEALS: 'att_meals',
   CONSENTS: 'att_consents',
   AWAY: 'att_away',
+  ANOMALY_REVIEWS: 'att_anomaly_reviews', // 이상징후 관리자 확인 기록(관리자 화면 경고 가라앉히기)
   // 지하철 통근(개인·로컬 저장)
   HOME: 'att_home', // 집(출발지) 좌표 GeoPoint
   SUBWAY_IDS: 'att_subway_ids', // 역명→TAGO 역ID 캐시 { [normName]: {id,route}[] }
-  SUBWAY_SCHED: 'att_subway_sched', // 시간표 캐시 접두사: `${SUBWAY_SCHED}_${stationId}_${daily}`
+  // 시간표 캐시 접두사: `${SUBWAY_SCHED}_${stationId}_${daily}`
+  // v2 = 2026-08-28. 예전 캐시는 TAGO 200행 제한으로 저녁·막차가 잘려 있어서(첫차 "0" 쓰레기행 포함)
+  //      키를 바꿔 통째로 무시한다. 안 그러면 캐시 만료(30일)까지 잘린 시간표가 계속 보인다.
+  SUBWAY_SCHED: 'att_subway_sched_v2',
   SUBWAY_FAV: 'att_subway_fav', // 자주 타는 역 즐겨찾기 (SubwayStation[])
   BUS_STOPS: 'att_bus_stops', // 좌표별 근처 정류소 캐시 접두사: `${BUS_STOPS}_${lat3}_${lng3}`
   BUS_FAV: 'att_bus_fav', // 자주 타는 버스 정류소 즐겨찾기 (BusStop[])
@@ -37,10 +41,15 @@ export const STORAGE_KEYS = {
   SIGN_REMIND_SEEN: 'att_sign_remind_seen', // 주간 서명 리마인드 팝업을 띄운 주(월요일 키) — 주 1회만 노출
 } as const;
 
-// 지하철 시간표 캐시 유효기간(ms). 시간표는 개편 시에만 바뀌므로 길게 잡는다.
-export const SUBWAY_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30일
-// 즐겨찾기 역 시간표 자동 갱신 주기: 캐시가 이보다 오래되면 통근 탭 진입 시 백그라운드로 새로고침한다.
-export const SUBWAY_AUTO_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7일
+// 지하철 시간표 자동 갱신 주기(ms). 캐시가 이보다 오래되면 새로 받아온다.
+// 시간표는 개편 때만 바뀌므로 주 1회면 충분하고, 서버(TAGO/Edge Function)가 죽어도
+// 저장된 시간표로 계속 볼 수 있게 캐시 자체는 만료시키지 않는다(아래 KEEP 상수).
+export const SUBWAY_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7일 = 자동 갱신 주기
+// 즐겨찾기 역 시간표 자동 갱신 주기(통근 탭 진입 시 백그라운드 갱신) — 위와 동일하게 1주일.
+export const SUBWAY_AUTO_REFRESH_MS = SUBWAY_CACHE_TTL;
+// 캐시 보관 기간: 사실상 무기한. 오래됐어도 지우지 않고, 갱신에 실패하면 그대로 보여준다.
+// (서버 장애·오프라인·TAGO 데이터 누락 시 "시간표가 아예 안 뜨는" 상황을 막기 위함)
+export const SUBWAY_CACHE_KEEP_FOREVER = true;
 
 // 저녁식대 1일 한도(원)
 export const MEAL_DAILY_LIMIT = 20000;

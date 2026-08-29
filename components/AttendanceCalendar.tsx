@@ -33,6 +33,8 @@ export function AttendanceCalendar({
   policy,
   holidays = [],
   onEditDay,
+  reviewedDates,
+  onToggleReview,
 }: {
   userId: string;
   records: AttendanceRecord[];
@@ -40,6 +42,9 @@ export function AttendanceCalendar({
   policy: WorkPolicy;
   holidays?: Holiday[];
   onEditDay?: (date: string) => void;
+  // 관리자 전용: 이상징후 확인 처리된 날짜(표시를 가라앉힘) + 확인/해제 토글
+  reviewedDates?: Set<string>;
+  onToggleReview?: (date: string, reviewed: boolean) => void;
 }) {
   const t = useTheme();
   const [monthOffset, setMonthOffset] = useState(0);
@@ -199,7 +204,8 @@ export function AttendanceCalendar({
                 {/* 마커는 색 + 모양 둘 다 다르게(●정상 ▲이상 ■연차/유급 □무급) — 색약도 구분 가능 */}
                 <Row style={{ gap: 2, height: 7, alignItems: 'center' }}>
                   {okWork && <Marker shape={workTone.marker} color={workTone.color} />}
-                  {anomaly && <Marker shape="triangle" color={t.danger} />}
+                  {/* 관리자가 확인한 이상징후는 회색으로 가라앉힌다(사실은 남기되 경고는 아님) */}
+                  {anomaly && <Marker shape="triangle" color={reviewedDates?.has(c.date) ? t.textFaint : t.danger} />}
                   {lv && <Marker shape={lv.marker} color={lv.color} />}
                 </Row>
               </View>
@@ -223,7 +229,12 @@ export function AttendanceCalendar({
       {sel && (
         <>
           <Divider />
-          <DayDetail cell={sel} onEdit={onEditDay} />
+          <DayDetail
+            cell={sel}
+            onEdit={onEditDay}
+            reviewed={!!reviewedDates?.has(sel.date)}
+            onToggleReview={onToggleReview}
+          />
         </>
       )}
     </Card>
@@ -245,7 +256,17 @@ function Legend({ tone: name, label, chip }: { tone: Parameters<typeof tone>[1];
   );
 }
 
-function DayDetail({ cell, onEdit }: { cell: DayCell; onEdit?: (date: string) => void }) {
+function DayDetail({
+  cell,
+  onEdit,
+  reviewed,
+  onToggleReview,
+}: {
+  cell: DayCell;
+  onEdit?: (date: string) => void;
+  reviewed?: boolean;
+  onToggleReview?: (date: string, reviewed: boolean) => void;
+}) {
   const t = useTheme();
   const { comp, rec, date } = cell;
   const wd = WD[cell.weekday];
@@ -279,10 +300,20 @@ function DayDetail({ cell, onEdit }: { cell: DayCell; onEdit?: (date: string) =>
       {comp.labels.length > 0 && (
         <Row style={{ flexWrap: 'wrap' }}>
           {comp.labels.map((l) => (
-            <Badge key={l} text={l} color={labelColor(t, l)} />
+            <Badge key={l} text={l} color={reviewed ? t.textFaint : labelColor(t, l)} />
           ))}
         </Row>
       )}
+      {onToggleReview && isAnomaly(comp) ? (
+        reviewed ? (
+          <Row style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Badge text="✔ 확인함" color={t.textFaint} />
+            <Button label="확인 해제" variant="neutral" small onPress={() => onToggleReview(date, false)} />
+          </Row>
+        ) : (
+          <Button label="✔ 이상징후 확인" variant="outline" small onPress={() => onToggleReview(date, true)} />
+        )
+      ) : null}
       {rec?.hash ? <Muted size={11}>해시 {shortHash(rec.hash)}</Muted> : null}
       {onEdit ? (
         <Button label="✏️ 근태 수정" variant="outline" small onPress={() => onEdit(date)} />

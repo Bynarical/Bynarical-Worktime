@@ -173,6 +173,17 @@ export interface MealAllowance {
   createdAt?: string;
 }
 
+// 이상징후(지각·코어타임 미충족·근로부족·퇴근 미기록) 관리자 확인 기록.
+// 확인한 날짜는 관리자 화면에서 경고 표시가 가라앉는다(근태점수·집계 숫자는 그대로).
+export interface AnomalyReview {
+  id: string;
+  userId: string; // 대상 직원
+  date: string; // YYYY-MM-DD
+  reviewedBy?: string; // 확인한 관리자 이름
+  reviewedAt?: string; // ISO
+  note?: string;
+}
+
 // 관리자가 기록하는 무단이탈(무단 이석) — 근태 점수 감점
 export interface AwayLog {
   id: string;
