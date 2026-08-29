@@ -35,6 +35,8 @@ import {
   useFavorites,
   fetchTimetable,
   dailyTypeForDate,
+  DailyType,
+  DAILY_LABEL,
   Train,
   TimetableResult,
   nextTrainsAfter,
@@ -819,6 +821,12 @@ function TimetableCard({ station, onClose, fav }: { station: SubwayStation; onCl
         <Chip label={`퇴근 ${leaveAt}`} small onPress={() => setRefHM(leaveAt)} color={t.warning} />
       </Row>
       <Muted size={11}>기준 {refHM} 이후 출발하는 열차 (방면=종점 기준)</Muted>
+      {/* TAGO에 수도권 토요일 시간표가 없어 휴일 시간표로 대체된 경우 알린다(요청 요일 ≠ 실제 데이터 요일) */}
+      {trains.length > 0 && trains[0].daily && trains[0].daily !== daily ? (
+        <Muted size={11} style={{ color: t.warning }}>
+          ⚠️ {DAILY_LABEL[daily]} 시간표가 제공되지 않아 {DAILY_LABEL[trains[0].daily as DailyType]} 시간표를 표시합니다. 실제 운행과 다를 수 있어요.
+        </Muted>
+      ) : null}
 
       {loading ? (
         <Muted size={13}>시간표 불러오는 중...</Muted>

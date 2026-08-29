@@ -149,30 +149,47 @@ Deno.serve(async (req) => {
       if (!stationId) return json(200, { ok: false, error: '역 ID가 필요합니다.' });
       const daily = ['01', '02', '03'].includes(String(body.daily)) ? String(body.daily) : '01';
       const dirs: string[] = body.up === 'U' || body.up === 'D' ? [String(body.up)] : ['U', 'D'];
-      const trains: { time: string; dir: string; daily: string; dest: string; route: string }[] = [];
-      for (const up of dirs) {
-        const items = await callTago('GetSubwaySttnAcctoSchdulList', {
-          serviceKey: key,
-          subwayStationId: stationId,
-          dailyTypeCode: daily,
-          upDownTypeCode: up,
-        });
-        for (const it of items) {
-          const time = toHM(pick(it, 'depTime', 'arrTime', 'depArrivalTime', 'arrivalTime'));
-          // TAGO 응답엔 시각이 "0" 같은 쓰레기 행이 섞여 온다(종착 처리 행으로 추정).
-          // 그대로 두면 첫차가 "0"으로 표시되므로 HH:MM 형식이 아닌 건 버린다.
-          if (!/^\d{2}:\d{2}$/.test(time)) continue;
-          trains.push({
-            time,
-            dir: up,
-            daily,
-            dest: pick(it, 'endSubwayStationNm', 'endSubwayStationName', 'endStationNm', 'endStationName'),
-            route: pick(it, 'subwayRouteNm', 'subwayRouteName', 'routeNm'),
+
+      const loadDaily = async (dt: string) => {
+        const out: { time: string; dir: string; daily: string; dest: string; route: string }[] = [];
+        for (const up of dirs) {
+          const items = await callTago('GetSubwaySttnAcctoSchdulList', {
+            serviceKey: key,
+            subwayStationId: stationId,
+            dailyTypeCode: dt,
+            upDownTypeCode: up,
           });
+          for (const it of items) {
+            const time = toHM(pick(it, 'depTime', 'arrTime', 'depArrivalTime', 'arrivalTime'));
+            // TAGO 응답엔 시각이 "0" 같은 쓰레기 행이 섞여 온다(종착 처리 행으로 추정).
+            // 그대로 두면 첫차가 "0"으로 표시되므로 HH:MM 형식이 아닌 건 버린다.
+            if (!/^\d{2}:\d{2}$/.test(time)) continue;
+            out.push({
+              time,
+              dir: up,
+              daily: dt,
+              dest: pick(it, 'endSubwayStationNm', 'endSubwayStationName', 'endStationNm', 'endStationName'),
+              route: pick(it, 'subwayRouteNm', 'subwayRouteName', 'routeNm'),
+            });
+          }
+        }
+        return out;
+      };
+
+      let usedDaily = daily;
+      let trains = await loadDaily(daily);
+      // 수도권 노선은 TAGO에 토요일(02) 시간표가 아예 없다(2026-08 실측: 서울 1~9호선·공항철도 전부 0건,
+      // 평일 01 · 휴일 03 은 정상). 토요일에 화면이 통째로 비는 것보다 휴일 시간표를 보여주는 편이 낫다.
+      if (!trains.length && daily === '02') {
+        const alt = await loadDaily('03');
+        if (alt.length) {
+          trains = alt;
+          usedDaily = '03';
         }
       }
       trains.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
-      return json(200, { ok: true, trains });
+      // daily = 실제로 사용한 요일 코드. 요청과 다르면 클라이언트가 안내 문구를 띄운다.
+      return json(200, { ok: true, trains, daily: usedDaily, requestedDaily: daily });
     }
 
     return json(200, { ok: false, error: `알 수 없는 action: ${action}` });
