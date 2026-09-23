@@ -52,13 +52,18 @@ npm run web       # 웹 개발 서버 (http://localhost:8081)
 npm run ios       # iOS 시뮬레이터
 npm run android   # Android 에뮬레이터
 npm run typecheck # 타입 체크
+npm run db:status # Supabase 마이그레이션 적용 상태
+npm run db:migrate # 대기 중인 supabase/*.sql 적용 (Supabase CLI 로그인 필요)
 ```
+
+DB 스키마 변경은 `supabase/`에 `.sql`을 추가하고 `scripts/db-migrate.mjs`의 목록 끝에 등록하면
+`deploy:web` 때 자동 적용됩니다 — 자세한 내용은 [`supabase/README.md`](./supabase/README.md#마이그레이션-자동-적용).
 
 ## 웹 배포 (GitHub Pages)
 
 ```bash
 npm run export:web   # dist/ 에 정적 웹 빌드(SPA) + .nojekyll·404.html 생성
-npm run deploy:web   # gh-pages 브랜치로 푸시
+npm run deploy:web   # DB 마이그레이션 적용 → gh-pages 브랜치로 푸시
 ```
 
 배포 전 변경사항을 먼저 커밋해야 한다 — gh-pages 커밋 메시지에 그 커밋 해시를 남기기 때문이다.

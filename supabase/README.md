@@ -14,6 +14,28 @@
 1. 좌측 **SQL Editor** → **New query**
 2. [`schema.sql`](./schema.sql) 전체를 붙여넣고 **Run**
 3. "Success" 확인 (테이블 7개 + RLS 정책 생성)
+4. 나머지 마이그레이션은 **자동 적용**합니다 — 아래 [마이그레이션 자동 적용](#마이그레이션-자동-적용) 참고.
+
+## 마이그레이션 자동 적용
+
+`supabase/*.sql`은 SQL Editor에 붙여넣지 않고 스크립트로 적용합니다. 적용 이력을 DB
+(`app_private.sql_migrations`, API 비노출)에 파일명+체크섬으로 남겨서, **아직 안 돌린 파일만** 순서대로 실행합니다.
+예전처럼 "어느 컴퓨터에서 어떤 파일을 돌렸는지" 기억할 필요가 없습니다.
+
+```bash
+npx supabase login    # 컴퓨터당 1회 (브라우저 인증, 토큰은 CLI가 OS 자격 증명 저장소에 보관)
+npm run db:status     # 적용 상태 보기 (읽기 전용)
+npm run db:migrate    # 대기 중인 파일 적용
+```
+
+- **`npm run deploy:web`은 웹을 올리기 전에 자동으로 `db:migrate`를 먼저 실행**합니다. 마이그레이션이
+  실패하면 배포하지 않습니다(급할 때만 `node scripts/deploy-web.mjs --skip-db`).
+- 각 파일은 이력 기록과 함께 **한 트랜잭션**으로 실행됩니다. 중간에 실패하면 그 파일은 통째로 롤백되고 뒤 파일은 실행하지 않습니다.
+- **새 마이그레이션 추가**: `supabase/`에 `.sql`을 만들고 [`scripts/db-migrate.mjs`](../scripts/db-migrate.mjs)의
+  `MIGRATIONS` 목록 **끝에** 파일명을 추가. 목록에 없는 `.sql`이 있으면 스크립트가 실패합니다(빠뜨림 방지).
+- **이미 적용된 파일을 고치면** 자동 재실행하지 않고 멈춥니다(예: `schema.sql` 재실행은 뒤 파일들이 만든 RLS 정책을 지움).
+  스키마 변경은 새 파일로 만들고, 참고용 수정(예: 새 설치용 `schema.sql` 갱신)이면 `node scripts/db-migrate.mjs --mark schema.sql`.
+- SQL Editor로 이미 손으로 돌린 파일은 `--mark <파일>`로 실행 없이 적용됨 처리할 수 있습니다.
 
 ## 3. 이메일 로그인 설정
 1. 좌측 **Authentication → Sign In / Providers → Email** 활성화 확인

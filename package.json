@@ -34,6 +34,8 @@
     "web": "expo start --web",
     "export:web": "expo export --platform web --output-dir dist && node scripts/postexport-web.mjs",
     "deploy:web": "node scripts/deploy-web.mjs",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:status": "node scripts/db-migrate.mjs --status",
     "typecheck": "tsc --noEmit"
   },
   "private": true

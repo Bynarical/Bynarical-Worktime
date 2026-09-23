@@ -9,6 +9,7 @@
 //   node scripts/deploy-web.mjs                  # 커밋 제목을 main HEAD에서 가져옴
 //   node scripts/deploy-web.mjs "야근식대 내역"    # 설명 직접 지정
 //   node scripts/deploy-web.mjs --allow-dirty    # 커밋 안 된 변경이 있어도 진행
+//   node scripts/deploy-web.mjs --skip-db        # DB 마이그레이션(scripts/db-migrate.mjs) 건너뛰기
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,6 +24,7 @@ const REMOTE = 'origin';
 
 const argv = process.argv.slice(2);
 const allowDirty = argv.includes('--allow-dirty');
+const skipDb = argv.includes('--skip-db');
 const desc = argv.find((a) => !a.startsWith('--'));
 
 const git = (args, opts = {}) => {
@@ -63,6 +65,21 @@ if (dirty && !allowDirty) {
 const sha = git(['rev-parse', '--short', 'HEAD']);
 const subject = desc || git(['log', '-1', '--pretty=%s']);
 const message = `Deploy: ${subject} (${sha})`;
+
+// --- 2.5 DB 마이그레이션 ------------------------------------------
+// 새 앱이 기대하는 컬럼·테이블이 먼저 있어야 하므로 웹을 올리기 전에 DB부터 맞춘다.
+// (옛 앱은 컬럼이 더 있어도 괜찮지만, 새 앱은 컬럼이 없으면 깨질 수 있다.)
+// 실패하면 배포하지 않는다 — DB와 앱이 어긋난 채로 올라가는 것보다 낫다.
+if (skipDb) {
+  console.log('ℹ --skip-db: DB 마이그레이션을 건너뜁니다.');
+} else {
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, 'db-migrate.mjs')], { cwd: ROOT, stdio: 'inherit' });
+  } catch {
+    fail('DB 마이그레이션이 실패해 배포를 중단했습니다. 위 메시지를 확인하거나, 급하면 --skip-db로 건너뛰세요.');
+  }
+  console.log('');
+}
 
 // --- 3. 임시 worktree 준비 (OneDrive 밖) ---------------------------
 // `git worktree add`는 이미 있는 경로를 거부하므로, 임시 폴더 '안'의 아직 없는 경로를 준다.
