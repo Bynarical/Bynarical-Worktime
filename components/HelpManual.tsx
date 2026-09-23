@@ -71,6 +71,15 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
                 <Step>출근하면 <Text style={{ fontWeight: '700' }}>예상 퇴근 시각</Text>과 남은 시간이 표시됩니다. 소정근로({wp.dailyWorkMinutes / 60}시간)를 채우면 퇴근 가능.</Step>
                 <Step>퇴근할 때 <Text style={{ fontWeight: '700' }}>퇴근</Text> 버튼을 꼭 눌러주세요. (안 누르면 '퇴근 미기록')</Step>
                 <Step>외근·현장 근무는 <Text style={{ fontWeight: '700' }}>출장 모드</Text>로 출근하면 위치 검증을 생략합니다.</Step>
+                <Step>
+                  출장은 <Text style={{ fontWeight: '700' }}>종일 / 오전만 / 오후만</Text> 중에서 고릅니다. 반나절 출장이면
+                  나머지 반나절은 평소처럼 근무하세요.
+                </Step>
+                <Step>
+                  출장은 이동·현장 사정으로 소정근로를 다 못 채울 수 있어, <Text style={{ fontWeight: '700' }}>관리자가 인정(승인)</Text>하면
+                  그 구간(종일 {wp.dailyWorkMinutes / 60}시간 · 오전/오후 {wp.dailyWorkMinutes / 120}시간)만큼 근로시간으로 인정되어
+                  근로부족·조기퇴근·코어타임 미충족으로 잡히지 않습니다. (승인 전에는 실제 기록만 반영)
+                </Step>
               </Section>
             </Card>
 

@@ -1,5 +1,5 @@
 // 근태 도메인 로직 — 코어타임 근무제(근로계약서 제4조) 반영.
-import { AttendanceRecord, LeaveCategory, LeaveRequest, WorkPolicy } from './types';
+import { AttendanceRecord, LeaveCategory, LeaveRequest, TripSegment, TripStatus, WorkPolicy } from './types';
 import { LEAVE_CATEGORY_LABELS } from './leave';
 import { ceilToStep, hmToMinutes, minutesOfDay, minutesToHM, weekday } from './time';
 
@@ -72,6 +72,37 @@ export function coreOffIntervals(leaves: LeaveRequest[], policy: WorkPolicy): In
   return out.filter((iv) => iv.e > iv.s);
 }
 
+// ---- 출장(외근) ----
+// 출장은 위치 검증을 생략하는 근무 형태이고, 이동·현장 사정으로 소정근로를 다 못 채울 수 있다.
+// 그래서 "관리자가 승인한 출장"에 한해 그 구간(종일 8h / 오전·오후 각 4h)만큼을
+// 근로시간으로 인정해 부족분을 메운다. 인정은 소정근로를 넘지 않는다(초과근무로 부풀지 않게).
+export const TRIP_SEGMENT_LABELS: Record<TripSegment, string> = { FULL: '종일', AM: '오전', PM: '오후' };
+export const TRIP_STATUS_LABELS: Record<TripStatus, string> = { REQUESTED: '승인대기', APPROVED: '인정', REJECTED: '불인정' };
+
+export function tripOf(record?: AttendanceRecord): { segment: TripSegment; status: TripStatus } | null {
+  if (record?.type !== 'TRIP') return null;
+  return { segment: record.tripSegment ?? 'FULL', status: record.tripStatus ?? 'REQUESTED' };
+}
+
+// 승인된 출장이 덮는 소정근로(분). 미승인·불인정은 0.
+export function tripCoverMinutes(record: AttendanceRecord | undefined, policy: WorkPolicy, requiredMinutes: number): number {
+  const trip = tripOf(record);
+  if (!trip || trip.status !== 'APPROVED') return 0;
+  const full = policy.dailyWorkMinutes;
+  const cover = trip.segment === 'FULL' ? full : Math.round(full / 2);
+  return Math.min(requiredMinutes, cover);
+}
+
+// 승인 출장으로 코어타임 판정에서 빼는 구간(코어 창 기준). 종일=코어 전체.
+export function tripCoreOffIntervals(segment: TripSegment | null, coverMinutes: number, policy: WorkPolicy): Interval[] {
+  if (!segment || coverMinutes <= 0) return [];
+  const coreS = hmToMinutes(policy.coreStart);
+  const coreE = hmToMinutes(policy.coreEnd);
+  if (segment === 'FULL') return [{ s: coreS, e: coreE }];
+  if (segment === 'AM') return [{ s: coreS, e: Math.min(coreE, coreS + coverMinutes) }];
+  return [{ s: Math.max(coreS, coreE - coverMinutes), e: coreE }];
+}
+
 export interface DayComputation {
   date: string;
   hasCheckIn: boolean;
@@ -85,11 +116,16 @@ export interface DayComputation {
   workedMinutes: number; // 휴게 제외 실근로(퇴근 전이면 현재까지)
   breakDeducted: number;
   requiredMinutes: number; // 휴가 차감 후 소정근로
+  tripSegment: TripSegment | null; // 출장 구간(출장이 아니면 null)
+  tripStatus: TripStatus | null; // 출장 승인 상태
+  tripCoverMinutes: number; // 승인 출장이 덮는 소정근로(분) — 인정 한도
+  tripMinutes: number; // 그중 실제로 부족분을 메운 인정 근로(분)
+  recognizedMinutes: number; // 실근로 + 출장 인정 = 소정 충족 판정 기준
   leaveMinutes: number; // 그날 휴가 합계(연차+유급+무급)
   annualMinutes: number; // 연차
   paidMinutes: number; // 유급휴가
   unpaidMinutes: number; // 무급휴가
-  diffMinutes: number; // worked - required (음수=부족, 양수=초과)
+  diffMinutes: number; // recognized - required (음수=부족, 양수=초과)
   isWorkday: boolean;
   isFullLeave: boolean;
   leaveCategory: LeaveCategory | null; // 그날의 대표 휴가 종류(종일 휴가 우선 → 시간 많은 순). 휴가 없으면 null
@@ -157,9 +193,15 @@ export function computeDay(
       : null);
   const requiredMinutes = Math.max(0, policy.dailyWorkMinutes - leaveMinutes);
 
+  // 출장 — 승인된 구간만큼 소정근로를 인정한다(관리자 승인 전에는 인정 0).
+  const trip = tripOf(record);
+  const tripSegment = trip?.segment ?? null;
+  const tripStatus = trip?.status ?? null;
+  const tripCover = tripCoverMinutes(record, policy, requiredMinutes);
+
   const plannedEndMin = plannedEndMinutes(plannedStartMin, policy);
-  // 퇴근 가능 시각 = 적용 출근 + 소정근로(연차 차감) + 걸치는 휴게
-  const expectedOutMin = workEndMinutes(effectiveStartMin, requiredMinutes, policy);
+  // 퇴근 가능 시각 = 적용 출근 + 소정근로(연차·승인 출장 차감) + 걸치는 휴게
+  const expectedOutMin = workEndMinutes(effectiveStartMin, Math.max(0, requiredMinutes - tripCover), policy);
   const expectedInMin = plannedStartMin;
 
   // 진행중(퇴근 전)이면 현재 시각까지
@@ -179,14 +221,19 @@ export function computeDay(
     workedMinutes = intervalsLength(subtract(span, [{ s: bS, e: bE }, ...customLeaveIv]));
   }
 
-  // 코어타임 유효 구간 = 코어창 - 연차 off
+  // 승인 출장 인정분 — 부족한 만큼만 메운다(실근로와 합쳐 소정근로를 넘지 않음).
+  const tripMinutes = Math.min(tripCover, Math.max(0, requiredMinutes - workedMinutes));
+  const recognizedMinutes = workedMinutes + tripMinutes;
+
+  // 코어타임 유효 구간 = 코어창 - 연차 off - 승인 출장 구간
   const effectiveCore = subtract(
     { s: hmToMinutes(policy.coreStart), e: hmToMinutes(policy.coreEnd) },
-    coreOffIntervals(leaves, policy)
+    [...coreOffIntervals(leaves, policy), ...tripCoreOffIntervals(tripSegment, tripCover, policy)]
   );
 
-  // AM 연차만큼 출근 허용시각을 뒤로 미룬다
-  const allowedClockIn = latest + amLeaveMin;
+  // AM 연차 + 오전(또는 종일) 승인 출장만큼 출근 허용시각을 뒤로 미룬다
+  const tripLateAllowance = tripSegment === 'PM' ? 0 : tripCover;
+  const allowedClockIn = latest + amLeaveMin + tripLateAllowance;
 
   const flags = {
     late: false,
@@ -211,12 +258,13 @@ export function computeDay(
         (c) => checkInMin != null && checkInMin <= c.s + 0.01 && checkOutMin >= c.e - 0.01
       );
       if (effectiveCore.length > 0 && !covered) flags.coreViolation = true;
-      if (workedMinutes < requiredMinutes - 0.01) flags.insufficient = true;
-      if (workedMinutes > requiredMinutes + 0.01) flags.overtime = true;
+      if (recognizedMinutes < requiredMinutes - 0.01) flags.insufficient = true;
+      if (recognizedMinutes > requiredMinutes + 0.01) flags.overtime = true;
     }
   }
 
-  const diffMinutes = hasCheckOut ? workedMinutes - requiredMinutes : 0;
+  // 퇴근 기록이 없어도 승인 출장이 덮은 날은 그만큼 인정된 것으로 본다(퇴근 미기록 라벨은 그대로).
+  const diffMinutes = hasCheckOut || tripMinutes > 0 ? recognizedMinutes - requiredMinutes : 0;
 
   const labels: string[] = [];
   if (isFullLeave) {
@@ -233,7 +281,12 @@ export function computeDay(
   if (flags.missingClockOut) labels.push('퇴근 미기록');
   if (flags.insufficient) labels.push('근로부족');
   // 소정근로 이상은 정상으로 간주 — '초과근무' 라벨은 표시하지 않음
-  if (record?.type === 'TRIP') labels.push('출장');
+  if (tripSegment) {
+    labels.push(`출장(${TRIP_SEGMENT_LABELS[tripSegment]})`);
+    if (tripStatus === 'REQUESTED') labels.push('출장 승인대기');
+    else if (tripStatus === 'REJECTED') labels.push('출장 불인정');
+    else if (tripMinutes > 0) labels.push(`출장 인정 ${Math.round((tripMinutes / 60) * 10) / 10}h`);
+  }
 
   return {
     date: dateStr,
@@ -249,6 +302,11 @@ export function computeDay(
     workedMinutes,
     breakDeducted,
     requiredMinutes,
+    tripSegment,
+    tripStatus,
+    tripCoverMinutes: tripCover,
+    tripMinutes,
+    recognizedMinutes,
     leaveMinutes,
     annualMinutes: byCategory.ANNUAL,
     paidMinutes: byCategory.PAID,
@@ -267,8 +325,9 @@ export interface PeriodSummary {
   normalDays: number; // 정상근무일 — 소정근무일에 정상 출퇴근하고 이상징후 없는 날
   scheduledDays: number; // 소정근무일 — 근무요일이면서 종일연차가 아닌 날(기록/연차 있는 날 기준)
   totalWorked: number; // 총 실근로(분)
+  totalRecognized: number; // 총 인정근로(분) = 실근로 + 승인 출장 인정분
   totalRequired: number; // 총 소정근로(분)
-  totalDiff: number; // 순증감(분): totalWorked - totalRequired (참고용, 월 상계라 판정엔 쓰지 않음)
+  totalDiff: number; // 순증감(분): totalRecognized - totalRequired (참고용, 월 상계라 판정엔 쓰지 않음)
   // 근로시간은 하루 단위 판정 — 초과/부족을 상계하지 않고 날짜별로 따로 합산한다.
   // 부족/초과는 그날의 소정근로(연차 차감 후)를 기준으로 하므로, 연차 있는 날은 줄어든 소정만 채우면 정상.
   shortfallMinutes: number; // 소정 미달분 합계(양수), 부족한 날들만
@@ -284,7 +343,15 @@ export interface PeriodSummary {
   paidMinutes: number; // 그중 유급휴가(분)
   unpaidMinutes: number; // 그중 무급휴가(분)
   unpaidFullDays: number; // 종일 무급휴가 일수
-  tripCount: number;
+  tripCount: number; // 출장 일수(구간 무관)
+  tripApprovedCount: number; // 그중 관리자 인정(승인)된 일수
+  tripPendingCount: number; // 승인 대기 중인 출장 일수
+  tripMinutes: number; // 승인 출장으로 인정된 근로(분)
+}
+
+// 승인 출장이 그날 소정근로를 통째로 덮는지 — 이때 '퇴근 가능 시각'은 의미가 없다(언제 퇴근해도 인정).
+export function tripCoversWholeDay(c: DayComputation): boolean {
+  return c.tripCoverMinutes > 0 && c.tripCoverMinutes >= c.requiredMinutes;
 }
 
 // 정상근무일: 소정근무일에 정상 출퇴근 완료 + 이상징후 없음(초과근무는 정상 포함).
@@ -309,6 +376,7 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
     normalDays: 0,
     scheduledDays: 0,
     totalWorked: 0,
+    totalRecognized: 0,
     totalRequired: 0,
     totalDiff: 0,
     shortfallMinutes: 0,
@@ -325,12 +393,17 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
     unpaidMinutes: 0,
     unpaidFullDays: 0,
     tripCount: 0,
+    tripApprovedCount: 0,
+    tripPendingCount: 0,
+    tripMinutes: 0,
   };
   for (const c of computations) {
     if (c.hasCheckIn) s.days += 1;
     if (isNormalWorkday(c)) s.normalDays += 1;
     if (c.isWorkday && !c.isFullLeave) s.scheduledDays += 1;
     s.totalWorked += c.workedMinutes;
+    s.totalRecognized += c.recognizedMinutes;
+    s.tripMinutes += c.tripMinutes;
     s.totalRequired += c.requiredMinutes;
     s.leaveMinutes += c.leaveMinutes;
     s.annualMinutes += c.annualMinutes;
@@ -340,19 +413,25 @@ export function summarize(computations: DayComputation[], records: AttendanceRec
     // 날짜별 초과/부족을 상계 없이 합산 (그날의 소정 = 연차 차감 후 기준)
     if (c.flags.insufficient) {
       s.shortfallDays += 1;
-      s.shortfallMinutes += c.requiredMinutes - c.workedMinutes;
+      s.shortfallMinutes += c.requiredMinutes - c.recognizedMinutes;
     }
     if (c.flags.overtime) {
       s.overtimeDays += 1;
-      s.overtimeMinutes += c.workedMinutes - c.requiredMinutes;
+      s.overtimeMinutes += c.recognizedMinutes - c.requiredMinutes;
     }
     if (c.flags.late) s.lateCount += 1;
     if (c.flags.coreViolation) s.coreViolationCount += 1;
     if (c.flags.earlyLeave) s.earlyLeaveCount += 1;
     if (c.flags.missingClockOut) s.missingCount += 1;
   }
-  for (const r of records) if (r.type === 'TRIP') s.tripCount += 1;
-  s.totalDiff = s.totalWorked - s.totalRequired;
+  for (const r of records) {
+    const trip = tripOf(r);
+    if (!trip) continue;
+    s.tripCount += 1;
+    if (trip.status === 'APPROVED') s.tripApprovedCount += 1;
+    else if (trip.status === 'REQUESTED') s.tripPendingCount += 1;
+  }
+  s.totalDiff = s.totalRecognized - s.totalRequired;
   return s;
 }
 

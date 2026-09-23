@@ -24,11 +24,11 @@ import { useStore } from '@/lib/store';
 import { HelpManual } from '@/components/HelpManual';
 import { SignReminderPopup } from '@/components/SignReminderPopup';
 import { getCurrentPoint, nearestWorkplace } from '@/lib/geo';
-import { computeDay, workEndMinutes } from '@/lib/attendance';
+import { computeDay, workEndMinutes, tripCoversWholeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
 import { LEAVE_CATEGORY_ICONS, leaveCategoryLabel } from '@/lib/leave';
 import { labelColor, leaveStyle } from '@/lib/palette';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
-import { Workplace } from '@/lib/types';
+import { TripSegment, Workplace } from '@/lib/types';
 import { MEAL_DAILY_LIMIT, CONSENT_TEXT } from '@/lib/config';
 
 function useNow(intervalMs = 15000) {
@@ -51,6 +51,7 @@ export default function Today() {
 
   const [busy, setBusy] = useState(false);
   const [trip, setTrip] = useState(false);
+  const [tripSeg, setTripSeg] = useState<TripSegment>('FULL'); // 출장 구간: 종일 / 오전만 / 오후만
   const [geoMsg, setGeoMsg] = useState('');
   const [confirmOutOfRange, setConfirmOutOfRange] = useState(false);
   const [checkoutNotice, setCheckoutNotice] = useState(false); // 출근 직후 "퇴근 체크 잊지 마세요" 안내
@@ -104,8 +105,9 @@ export default function Today() {
       .sort()
       .reverse();
   }, [s.records, s.user?.id, today, now]);
-  const remaining = Math.max(0, comp.requiredMinutes - workedNow);
-  const progress = comp.requiredMinutes > 0 ? workedNow / comp.requiredMinutes : 0;
+  // 남은 시간·진행률은 '인정근로'(실근로 + 승인된 출장 인정분) 기준
+  const remaining = Math.max(0, comp.requiredMinutes - comp.recognizedMinutes);
+  const progress = comp.requiredMinutes > 0 ? comp.recognizedMinutes / comp.requiredMinutes : 0;
 
   async function doCheckIn(kind: 'WORK' | 'TRIP', override = false) {
     if (busy) return;
@@ -133,12 +135,21 @@ export default function Today() {
     }
     // 근무지 밖 일반 출근(출장 아님)은 관리자 승인 대기로 기록
     const pendingApproval = kind === 'WORK' && !within;
-    const ok = await s.checkIn({ type: kind, point: point ?? undefined, workplace, within, pending: pendingApproval });
+    const ok = await s.checkIn({
+      type: kind,
+      tripSegment: kind === 'TRIP' ? tripSeg : undefined,
+      point: point ?? undefined,
+      workplace,
+      within,
+      pending: pendingApproval,
+    });
     setGeoMsg(
       !ok
         ? '⚠️ 서버 저장 실패 — 인터넷 연결을 확인해 주세요. 기록은 임시 저장했고, 연결되면 자동으로 전송합니다.'
         : pendingApproval
         ? `기록됨 — 근무지 반경 밖이라 관리자 승인 후 출근 처리됩니다.${point ? ` (${Math.round(dist)}m)` : ''}`
+        : kind === 'TRIP'
+        ? `✈️ 출장(${TRIP_SEGMENT_LABELS[tripSeg]}) 기록됨 — 관리자 승인 후 그 구간이 근로시간으로 인정됩니다.`
         : point
         ? within
           ? `✓ ${workplace?.name} 반경 내 확인 (${Math.round(dist)}m)`
@@ -257,6 +268,26 @@ export default function Today() {
         </Card>
       )}
 
+      {/* ✈️ 오늘 출장 — 구간 + 관리자 인정(승인) 상태 */}
+      {comp.tripSegment && (
+        <Card style={{ borderColor: comp.tripStatus === 'APPROVED' ? t.trip : t.warning, borderWidth: 1.5 }}>
+          <Row style={{ gap: 8, alignItems: 'center' }}>
+            <Badge text={`✈️ 출장 ${TRIP_SEGMENT_LABELS[comp.tripSegment]}`} color={t.trip} soft={t.tripSoft} />
+            <Badge
+              text={TRIP_STATUS_LABELS[comp.tripStatus ?? 'REQUESTED']}
+              color={comp.tripStatus === 'APPROVED' ? t.success : comp.tripStatus === 'REJECTED' ? t.danger : t.warning}
+            />
+          </Row>
+          <Muted size={12}>
+            {comp.tripStatus === 'APPROVED'
+              ? `관리자가 인정한 출장입니다. 부족한 근로시간을 최대 ${minutesToKor(comp.tripCoverMinutes)}까지 인정합니다${comp.tripMinutes > 0 ? ` (현재 ${minutesToKor(comp.tripMinutes)} 인정)` : ''}.`
+              : comp.tripStatus === 'REJECTED'
+              ? '관리자가 출장 인정을 하지 않았습니다. 실제 출퇴근 기록만 근로시간으로 계산됩니다.'
+              : '관리자 승인을 기다리는 중입니다. 승인되면 출장 구간만큼 근로시간으로 인정됩니다.'}
+          </Muted>
+        </Card>
+      )}
+
       {/* ⚠️ 서버 미저장 경고 — 저장 실패로 재전송 대기 중 */}
       {unsyncedMine && (
         <Card style={{ borderColor: t.danger, borderWidth: 1.5 }}>
@@ -360,12 +391,23 @@ export default function Today() {
         <Card>
           <Row style={{ gap: 10 }}>
             <StatTile label="출근" value={rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '-'} sub={`적용 ${minutesToHM(comp.effectiveStartMin)}`} />
-            <StatTile label="퇴근 가능" value={minutesToHM(comp.expectedOutMin)} color={t.success} sub={remaining > 0 ? `${minutesToKor(remaining)} 남음` : '충족 ✓'} />
-            <StatTile label="위치" value={rec?.type === 'TRIP' ? '출장' : rec?.inVerified ? '확인' : '미확인'} color={rec?.type === 'TRIP' ? t.trip : rec?.inVerified ? t.success : t.warning} />
+            <StatTile
+              label="퇴근 가능"
+              value={tripCoversWholeDay(comp) ? '출장 인정' : minutesToHM(comp.expectedOutMin)}
+              color={t.success}
+              sub={remaining > 0 ? `${minutesToKor(remaining)} 남음` : '충족 ✓'}
+            />
+            <StatTile
+              label="위치"
+              value={comp.tripSegment ? `출장 ${TRIP_SEGMENT_LABELS[comp.tripSegment]}` : rec?.inVerified ? '확인' : '미확인'}
+              color={comp.tripSegment ? t.trip : rec?.inVerified ? t.success : t.warning}
+              sub={comp.tripSegment ? TRIP_STATUS_LABELS[comp.tripStatus ?? 'REQUESTED'] : undefined}
+            />
           </Row>
-          <ProgressBar value={workedNow} max={comp.requiredMinutes} color={remaining > 0 ? undefined : [t.success, t.success]} />
+          <ProgressBar value={comp.recognizedMinutes} max={comp.requiredMinutes} color={remaining > 0 ? undefined : [t.success, t.success]} />
           <Muted size={12}>
             소정근로 {minutesToKor(comp.requiredMinutes)} · 휴게 {policy.breakStart}–{policy.breakEnd}는 근로시간에서 제외
+            {comp.tripMinutes > 0 ? ` · 출장 인정 ${minutesToKor(comp.tripMinutes)} 포함` : ''}
             {remaining <= 0 ? ' · 지금 퇴근 가능 ✓' : ''}
           </Muted>
           {minutesOfDay(now) >= hmToMinutes(policy.breakStart) && minutesOfDay(now) < hmToMinutes(policy.breakEnd) && (
@@ -414,12 +456,17 @@ export default function Today() {
             <StatTile label="출근" value={rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '-'} sub={`적용 ${minutesToHM(comp.effectiveStartMin)}`} />
             <StatTile label="퇴근" value={rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '-'} />
             <StatTile
-              label="실근로"
-              value={minutesToKor(comp.workedMinutes)}
+              label={comp.tripMinutes > 0 ? '인정근로' : '실근로'}
+              value={minutesToKor(comp.recognizedMinutes)}
               color={comp.diffMinutes >= 0 ? t.success : t.danger}
               sub={`${comp.diffMinutes >= 0 ? '초과 +' : '부족 '}${minutesToKor(comp.diffMinutes)}`}
             />
           </Row>
+          {comp.tripMinutes > 0 && (
+            <Muted size={12} style={{ color: t.trip }}>
+              ✈️ 실근로 {minutesToKor(comp.workedMinutes)} + 출장 인정 {minutesToKor(comp.tripMinutes)}
+            </Muted>
+          )}
           {comp.labels.length > 0 && (
             <Row style={{ flexWrap: 'wrap' }}>
               {comp.labels.map((l) => (
@@ -437,8 +484,17 @@ export default function Today() {
           {confirmOutOfRange && (
             <Row>
               <Button label="승인요청 출근" variant="warning" small onPress={() => doCheckIn('WORK', true)} style={{ flex: 1 }} />
-              <Button label="출장으로 기록" variant="trip" small onPress={() => doCheckIn('TRIP', true)} style={{ flex: 1 }} />
+              <Button
+                label={`출장(${TRIP_SEGMENT_LABELS[tripSeg]})으로 기록`}
+                variant="trip"
+                small
+                onPress={() => doCheckIn('TRIP', true)}
+                style={{ flex: 1 }}
+              />
             </Row>
+          )}
+          {confirmOutOfRange && (
+            <Muted size={11}>출장 구간(종일·오전·오후)은 아래 [출장 모드]에서 바꿀 수 있습니다.</Muted>
           )}
         </Card>
       ) : null}
@@ -469,7 +525,13 @@ export default function Today() {
       {/* 액션 */}
       {state === 'before' && !comp.isFullLeave && (
         <>
-          <Button label="출근하기" icon="🟢" variant="success" loading={busy} onPress={() => doCheckIn(trip ? 'TRIP' : 'WORK')} />
+          <Button
+            label={trip ? `출장 출근 (${TRIP_SEGMENT_LABELS[tripSeg]})` : '출근하기'}
+            icon={trip ? '✈️' : '🟢'}
+            variant={trip ? 'trip' : 'success'}
+            loading={busy}
+            onPress={() => doCheckIn(trip ? 'TRIP' : 'WORK')}
+          />
           <Card>
             <Row style={{ justifyContent: 'space-between' }}>
               <View style={{ flex: 1 }}>
@@ -478,6 +540,29 @@ export default function Today() {
               </View>
               <Switch value={trip} onValueChange={setTrip} color={t.trip} />
             </Row>
+            {trip && (
+              <>
+                <Divider />
+                <Muted size={12}>출장 구간을 선택하세요. 오전·오후만 출장이면 나머지 반나절은 평소처럼 근무합니다.</Muted>
+                <Row style={{ flexWrap: 'wrap' }}>
+                  {(['FULL', 'AM', 'PM'] as TripSegment[]).map((seg) => (
+                    <Chip
+                      key={seg}
+                      label={`${TRIP_SEGMENT_LABELS[seg]}${seg === 'FULL' ? '' : ` ${policy.dailyWorkMinutes / 120}h`}`}
+                      active={tripSeg === seg}
+                      color={t.trip}
+                      onPress={() => setTripSeg(seg)}
+                      small
+                    />
+                  ))}
+                </Row>
+                <Muted size={11} style={{ color: t.trip }}>
+                  ✈️ 출장은 이동·현장 사정으로 소정근로를 다 못 채울 수 있습니다. 관리자가 승인하면 그 구간
+                  ({tripSeg === 'FULL' ? `${policy.dailyWorkMinutes / 60}시간` : `${policy.dailyWorkMinutes / 120}시간`})만큼
+                  근로시간으로 인정되어 근로부족·조기퇴근으로 잡히지 않습니다. 승인 전에는 실제 기록만 반영됩니다.
+                </Muted>
+              </>
+            )}
           </Card>
         </>
       )}

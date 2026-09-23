@@ -3,7 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { Card, Muted, Body, Badge, Row, Divider, Button, Marker } from '@/components/ui';
 import { MealLine } from '@/components/MealLine';
 import { useTheme } from '@/lib/theme';
-import { computeDay, DayComputation, isNormalWorkday } from '@/lib/attendance';
+import { computeDay, DayComputation, isNormalWorkday, tripCoversWholeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
 import { dateKey, minutesOfDay, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
 import { leaveCategoryLabel } from '@/lib/leave';
@@ -123,7 +123,9 @@ export function AttendanceCalendar({
   const annualDays = cells.filter((c) => c.comp.isFullLeave && c.comp.leaveCategory === 'ANNUAL').length;
   const paidDays = cells.filter((c) => c.comp.isFullLeave && c.comp.leaveCategory === 'PAID').length;
   const unpaidDays = cells.filter((c) => c.comp.isFullLeave && c.comp.leaveCategory === 'UNPAID').length;
-  const hasTrip = cells.some((c) => c.rec?.type === 'TRIP');
+  const tripCells = cells.filter((c) => c.comp.tripSegment);
+  const hasTrip = tripCells.length > 0;
+  const tripPending = tripCells.filter((c) => c.comp.tripStatus === 'REQUESTED').length;
   const mealCells = cells.filter((c) => c.meal);
   const mealTotal = mealCells.reduce((sum, c) => sum + (c.meal?.amount || 0), 0);
   // 이번 달에 실제로 나타난 항목만 범례에 표시 (색이 많아 보이는 것 방지)
@@ -177,7 +179,7 @@ export function AttendanceCalendar({
           // 휴가 색은 종류별로 다르다: 연차=보라 / 유급휴가=파랑 / 무급휴가=회색.
           // (정상 근무 초록과 절대 겹치지 않게 — lib/palette.ts 단일 출처)
           const lv = c.comp.leaveCategory ? leaveStyle(t, c.comp.leaveCategory) : null;
-          const workTone = tone(t, c.rec?.type === 'TRIP' ? 'trip' : 'normal');
+          const workTone = tone(t, c.comp.tripSegment ? 'trip' : 'normal');
           const numColor = c.comp.isFullLeave
             ? lv!.color
             : isHoliday || dow === 0
@@ -237,7 +239,7 @@ export function AttendanceCalendar({
         <Legend tone="annual" />
         <Legend tone="paid" />
         <Legend tone="unpaid" />
-        {hasTrip && <Legend tone="trip" label="출장" />}
+        {hasTrip && <Legend tone="trip" label={`출장 ${tripCells.length}일${tripPending > 0 ? ` (인정대기 ${tripPending})` : ''}`} />}
         <Legend tone="holiday" chip />
         {mealCells.length > 0 && (
           <Row style={{ gap: 4, alignItems: 'center' }}>
@@ -300,6 +302,13 @@ function DayDetail({
         <Row style={{ gap: 6, alignItems: 'center', flexShrink: 1 }}>
           <Body style={{ fontWeight: '800' }}>{date} ({wd})</Body>
           {cell.holidayName ? <Badge text={`🔴 ${cell.holidayName}`} color={t.danger} soft={t.dangerSoft} /> : null}
+          {comp.tripSegment ? (
+            <Badge
+              text={`✈️ ${TRIP_SEGMENT_LABELS[comp.tripSegment]} · ${TRIP_STATUS_LABELS[comp.tripStatus ?? 'REQUESTED']}`}
+              color={t.trip}
+              soft={t.tripSoft}
+            />
+          ) : null}
         </Row>
         {comp.isFullLeave ? (
           <Badge
@@ -316,9 +325,10 @@ function DayDetail({
       {!comp.isFullLeave && (rec || comp.leaveMinutes > 0) && (
         <Row style={{ gap: 8, flexWrap: 'wrap' }}>
           <KVInline k="실근로" v={minutesToKor(comp.workedMinutes)} />
+          {comp.tripMinutes > 0 ? <KVInline k="출장인정" v={minutesToKor(comp.tripMinutes)} color={t.trip} /> : null}
           <KVInline k="소정" v={minutesToKor(comp.requiredMinutes)} />
           <KVInline k="차이" v={`${comp.diffMinutes >= 0 ? '+' : ''}${minutesToKor(comp.diffMinutes)}`} color={comp.diffMinutes >= 0 ? t.success : t.danger} />
-          {comp.expectedOutMin ? <KVInline k="퇴근가능" v={minutesToHM(comp.expectedOutMin)} /> : null}
+          {comp.expectedOutMin ? <KVInline k="퇴근가능" v={tripCoversWholeDay(comp) ? "출장 인정" : minutesToHM(comp.expectedOutMin)} /> : null}
         </Row>
       )}
       {comp.labels.length > 0 && (

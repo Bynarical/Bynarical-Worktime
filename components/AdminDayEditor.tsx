@@ -4,11 +4,11 @@ import { Card, Button, Field, Chip, Row, Badge, Divider, Muted, Body } from './u
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { confirmationCovering } from '@/lib/confirmation';
-import { computeDay } from '@/lib/attendance';
+import { computeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
 import { dateKey, timeHM, hmToMinutes, minutesToHM, ceilToStep } from '@/lib/time';
 import { LEAVE_CATEGORY_ICONS, LEAVE_CATEGORY_NOTES, leaveCategoryLabel } from '@/lib/leave';
 import { leaveStyle } from '@/lib/palette';
-import { AttendanceType, LeaveCategory, LeaveSegment, LeaveUnit } from '@/lib/types';
+import { AttendanceType, LeaveCategory, LeaveSegment, LeaveUnit, TripSegment, TripStatus } from '@/lib/types';
 
 // 'HH:MM' → 해당 날짜(KST)의 ISO 문자열. 빈값=null(지움), 형식오류=undefined.
 function hmToIso(date: string, hm: string): string | null | undefined {
@@ -62,6 +62,10 @@ export function AdminDayEditor({
   const [cin, setCin] = useState(rec?.checkIn ? timeHM(Date.parse(rec.checkIn)) : '');
   const [cout, setCout] = useState(rec?.checkOut ? timeHM(Date.parse(rec.checkOut)) : '');
   const [type, setType] = useState<AttendanceType>(rec?.type ?? 'WORK');
+  // 출장: 구간(종일/오전/오후) + 인정 여부(승인대기/인정/불인정) + 사유
+  const [tripSeg, setTripSeg] = useState<TripSegment>(rec?.tripSegment ?? 'FULL');
+  const [tripStatus, setTripStatus] = useState<TripStatus>(rec?.tripStatus ?? 'REQUESTED');
+  const [tripNote, setTripNote] = useState(rec?.tripNote ?? '');
   const [aStart, setAStart] = useState('');
   const [aEnd, setAEnd] = useState('');
   // 관리자가 대신 등록할 휴가 종류(연차/유급/무급)
@@ -84,9 +88,21 @@ export function AdminDayEditor({
     }
     setBusy(true);
     const plannedStart = cin.trim() ? minutesToHM(ceilToStep(hmToMinutes(cin.trim()), step)) : undefined;
-    await s.adminSaveRecord(userId, date, { checkIn: inIso, checkOut: outIso, plannedStart, type });
+    await s.adminSaveRecord(userId, date, {
+      checkIn: inIso,
+      checkOut: outIso,
+      plannedStart,
+      type,
+      tripSegment: type === 'TRIP' ? tripSeg : undefined,
+      tripStatus: type === 'TRIP' ? tripStatus : undefined,
+      tripNote: type === 'TRIP' ? tripNote.trim() || undefined : undefined,
+    });
     setBusy(false);
-    setMsg('✓ 저장되었습니다.');
+    setMsg(
+      type === 'TRIP'
+        ? `✓ 출장(${TRIP_SEGMENT_LABELS[tripSeg]}) · ${TRIP_STATUS_LABELS[tripStatus]}(으)로 저장되었습니다.`
+        : '✓ 저장되었습니다.'
+    );
   }
 
   async function del() {
@@ -168,8 +184,51 @@ export function AdminDayEditor({
               <Text style={{ fontWeight: '700', color: t.text }}>근무기록</Text>
               <Row>
                 <Chip label="근무" active={type === 'WORK'} onPress={() => setType('WORK')} small />
-                <Chip label="출장" active={type === 'TRIP'} onPress={() => setType('TRIP')} small />
+                <Chip label="✈️ 출장" active={type === 'TRIP'} color={t.trip} onPress={() => setType('TRIP')} small />
               </Row>
+
+              {type === 'TRIP' && (
+                <View style={{ gap: 8, backgroundColor: t.tripSoft, borderRadius: 10, padding: 10 }}>
+                  <Text style={{ fontWeight: '700', color: t.trip, fontSize: 13 }}>출장 구간</Text>
+                  <Row style={{ flexWrap: 'wrap' }}>
+                    {(['FULL', 'AM', 'PM'] as TripSegment[]).map((seg) => (
+                      <Chip
+                        key={seg}
+                        label={`${TRIP_SEGMENT_LABELS[seg]}${seg === 'FULL' ? ` ${policy.dailyWorkMinutes / 60}h` : ` ${policy.dailyWorkMinutes / 120}h`}`}
+                        active={tripSeg === seg}
+                        color={t.trip}
+                        onPress={() => setTripSeg(seg)}
+                        small
+                      />
+                    ))}
+                  </Row>
+                  <Text style={{ fontWeight: '700', color: t.trip, fontSize: 13 }}>인정 여부</Text>
+                  <Row style={{ flexWrap: 'wrap' }}>
+                    {(['REQUESTED', 'APPROVED', 'REJECTED'] as TripStatus[]).map((st) => (
+                      <Chip
+                        key={st}
+                        label={st === 'APPROVED' ? '✅ 인정(승인)' : st === 'REJECTED' ? '⛔ 불인정' : '⏳ 승인대기'}
+                        active={tripStatus === st}
+                        color={st === 'APPROVED' ? t.success : st === 'REJECTED' ? t.danger : t.warning}
+                        onPress={() => setTripStatus(st)}
+                        small
+                      />
+                    ))}
+                  </Row>
+                  <Field label="출장지 · 사유 (선택)" value={tripNote} onChangeText={setTripNote} placeholder="예: 고객사 현장점검" />
+                  <Muted size={11}>
+                    인정(승인)하면 이 날 부족한 근로시간을 출장 구간만큼
+                    (종일 {policy.dailyWorkMinutes / 60}시간 · 오전/오후 {policy.dailyWorkMinutes / 120}시간) 인정해
+                    근로부족·조기퇴근·코어타임 미충족으로 잡지 않습니다. 인정은 소정근로를 넘지 않습니다.
+                  </Muted>
+                  {rec?.tripDecidedBy ? (
+                    <Muted size={11}>
+                      최근 결정: {rec.tripDecidedBy}
+                      {rec.tripDecidedAt ? ` · ${rec.tripDecidedAt.slice(0, 10)}` : ''}
+                    </Muted>
+                  ) : null}
+                </View>
+              )}
               <Row>
                 <View style={{ flex: 1 }}>
                   <Field label="출근 (HH:MM)" value={cin} onChangeText={setCin} placeholder="09:00" autoCapitalize="none" keyboardType="numbers-and-punctuation" />

@@ -16,7 +16,7 @@ import {
 } from '@/components/ui';
 import { useStore, isActiveEmployee } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
-import { computeDay, summarize, DayComputation } from '@/lib/attendance';
+import { computeDay, summarize, DayComputation, tripCoversWholeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
 import {
   addDaysKey,
   dateKey,
@@ -122,7 +122,8 @@ export default function History() {
       return;
     }
     const weekEnd = addDaysKey(weekStart, 6);
-    const total = rows.reduce((sum, r) => sum + r.comp.workedMinutes, 0);
+    // 서명하는 주간 총 근로 = 인정근로(실근로 + 관리자가 인정한 출장 시간)
+    const total = rows.reduce((sum, r) => sum + r.comp.recognizedMinutes, 0);
     await s.addConfirmation({
       userId: s.user.id,
       userName: s.user.name,
@@ -142,14 +143,18 @@ export default function History() {
   }
 
   function onExport() {
-    const headers = ['날짜', '유형', '계획출근', '출근', '퇴근', '실근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '상태', '해시'];
+    const headers = ['날짜', '유형', '출장구간', '출장인정', '출장인정(분)', '계획출근', '출근', '퇴근', '실근로(분)', '인정근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '상태', '해시'];
     const rows = dayRows.map((r) => [
       r.date,
-      r.rec?.type === 'TRIP' ? '출장' : '근무',
+      r.comp.tripSegment ? '출장' : '근무',
+      r.comp.tripSegment ? TRIP_SEGMENT_LABELS[r.comp.tripSegment] : '',
+      r.comp.tripStatus ? TRIP_STATUS_LABELS[r.comp.tripStatus] : '',
+      Math.round(r.comp.tripMinutes),
       r.rec?.plannedStart || '',
       r.rec?.checkIn ? timeHM(Date.parse(r.rec.checkIn)) : '',
       r.rec?.checkOut ? timeHM(Date.parse(r.rec.checkOut)) : '',
       Math.round(r.comp.workedMinutes),
+      Math.round(r.comp.recognizedMinutes),
       Math.round(r.comp.requiredMinutes),
       Math.round(r.comp.annualMinutes),
       Math.round(r.comp.paidMinutes),
@@ -201,6 +206,17 @@ export default function History() {
           <StatTile onHero label="지각" value={`${summary.lateCount}회`} />
           <StatTile onHero label="코어위반" value={`${summary.coreViolationCount}회`} />
         </Row>
+        {summary.tripCount > 0 && (
+          <Row style={{ gap: 8 }}>
+            <StatTile
+              onHero
+              label="출장"
+              value={`${summary.tripCount}일`}
+              sub={`인정 ${summary.tripApprovedCount}일${summary.tripPendingCount > 0 ? ` · 대기 ${summary.tripPendingCount}일` : ''}`}
+            />
+            <StatTile onHero label="출장 인정근로" value={minutesToKor(summary.tripMinutes)} />
+          </Row>
+        )}
         <Pressable
           onPress={onExport}
           style={{ backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}
@@ -234,7 +250,7 @@ export default function History() {
         {weeks.length === 0 && <Muted>기록이 없습니다</Muted>}
         {weeks.map(([ws, group]) => {
           const weekEnd = addDaysKey(ws, 6);
-          const total = group.comp.reduce((sum, c) => sum + c.workedMinutes, 0);
+          const total = group.comp.reduce((sum, c) => sum + c.recognizedMinutes, 0);
           const cf = confirmedFor(ws);
           const verdict = cf ? verifyConfirmation(cf, s.records, s.leaves) : 'ok';
           const tampered = verdict === 'tampered';
@@ -343,7 +359,16 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
   return (
     <Card>
       <Row style={{ justifyContent: 'space-between' }}>
-        <Body style={{ fontWeight: '700' }}>{date} ({wd})</Body>
+        <Row style={{ gap: 6, flexShrink: 1 }}>
+          <Body style={{ fontWeight: '700' }}>{date} ({wd})</Body>
+          {comp.tripSegment ? (
+            <Badge
+              text={`✈️ ${TRIP_SEGMENT_LABELS[comp.tripSegment]} · ${TRIP_STATUS_LABELS[comp.tripStatus ?? 'REQUESTED']}`}
+              color={t.trip}
+              soft={t.tripSoft}
+            />
+          ) : null}
+        </Row>
         {comp.isFullLeave ? (
           <Badge
             text={`종일 ${leaveCategoryLabel(comp.leaveCategory ?? undefined)}`}
@@ -357,9 +382,10 @@ function DayCard({ date, rec, comp }: { date: string; rec?: AttendanceRecord; co
       {!comp.isFullLeave && (
         <Row style={{ gap: 8, flexWrap: 'wrap' }}>
           <KVInline k="실근로" v={minutesToKor(comp.workedMinutes)} />
+          {comp.tripMinutes > 0 ? <KVInline k="출장인정" v={minutesToKor(comp.tripMinutes)} color={t.trip} /> : null}
           <KVInline k="소정" v={minutesToKor(comp.requiredMinutes)} />
           <KVInline k="차이" v={`${comp.diffMinutes >= 0 ? '+' : ''}${minutesToKor(comp.diffMinutes)}`} color={comp.diffMinutes >= 0 ? t.success : t.danger} />
-          {comp.expectedOutMin ? <KVInline k="퇴근가능" v={minutesToHM(comp.expectedOutMin)} /> : null}
+          {comp.expectedOutMin ? <KVInline k="퇴근가능" v={tripCoversWholeDay(comp) ? "출장 인정" : minutesToHM(comp.expectedOutMin)} /> : null}
         </Row>
       )}
       {comp.labels.length > 0 && (

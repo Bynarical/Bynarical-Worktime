@@ -12,6 +12,8 @@ import {
   LeaveSegment,
   LeaveCategory,
   LeaveUnit,
+  TripSegment,
+  TripStatus,
   Settings,
   User,
   Workplace,
@@ -96,15 +98,37 @@ interface StoreValue {
   refresh: () => Promise<void>;
 
   // 반환값: true=서버 저장 성공(또는 로컬 전용 모드), false=서버 저장 실패(미저장 대기열에 넣고 자동 재시도)
-  checkIn: (args: { type: AttendanceType; point?: GeoPoint; workplace?: Workplace | null; within?: boolean; pending?: boolean }) => Promise<boolean>;
+  checkIn: (args: {
+    type: AttendanceType;
+    tripSegment?: TripSegment; // 출장 구간(종일/오전/오후) — type='TRIP'일 때
+    point?: GeoPoint;
+    workplace?: Workplace | null;
+    within?: boolean;
+    pending?: boolean;
+  }) => Promise<boolean>;
   checkOut: (args: { point?: GeoPoint; within?: boolean }) => Promise<boolean>;
   unsynced: AttendanceRecord[]; // 서버 저장 실패로 재전송 대기 중인 기록
   resyncRecords: () => Promise<void>; // 미저장 기록 수동 재전송
   clearAllRecords: () => Promise<void>;
   adminApproveAttendance: (recordId: string) => Promise<void>;
   adminRejectAttendance: (recordId: string) => Promise<void>;
+  // 관리자: 출장 인정(승인) / 불인정 — 승인해야 출장 구간이 근로시간으로 인정된다.
+  adminDecideTrip: (recordId: string, approve: boolean) => Promise<void>;
   // 관리자 대리 편집(직원 근태)
-  adminSaveRecord: (userId: string, date: string, fields: { checkIn?: string | null; checkOut?: string | null; plannedStart?: string; type?: AttendanceType; note?: string }) => Promise<void>;
+  adminSaveRecord: (
+    userId: string,
+    date: string,
+    fields: {
+      checkIn?: string | null;
+      checkOut?: string | null;
+      plannedStart?: string;
+      type?: AttendanceType;
+      tripSegment?: TripSegment;
+      tripStatus?: TripStatus;
+      tripNote?: string;
+      note?: string;
+    }
+  ) => Promise<void>;
   adminDeleteRecord: (id: string) => Promise<void>;
 
   requestLeave: (req: { date: string; hours: LeaveUnit; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
@@ -448,7 +472,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }
 
   // ---- attendance ----
-  const checkIn: StoreValue['checkIn'] = async ({ type, point, workplace, within, pending }) => {
+  const checkIn: StoreValue['checkIn'] = async ({ type, tripSegment, point, workplace, within, pending }) => {
     if (!user) return false;
     const d = dateKey();
     const nowMsVal = new Date().getTime();
@@ -469,6 +493,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const rec: AttendanceRecord = {
       ...base0,
       type,
+      // 출장은 관리자 승인 전까지 인정 대기. 일반 근무로 찍으면 출장 정보는 지운다.
+      tripSegment: type === 'TRIP' ? tripSegment ?? base0.tripSegment ?? 'FULL' : undefined,
+      tripStatus: type === 'TRIP' ? base0.tripStatus ?? 'REQUESTED' : undefined,
       checkIn: base0.checkIn || nowIso,
       plannedStart,
       inLocation: point,
@@ -511,18 +538,38 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase) await api.adminDeleteRecord(recordId).catch((e) => console.warn('reject rec', e));
   };
 
+  // 관리자: 출장 인정(승인) / 불인정.
+  // 승인하면 그 날 출장 구간(종일 8h · 오전/오후 4h)만큼 근로시간으로 인정되어
+  // 근로부족·조기퇴근·코어타임 미충족 판정에서 제외된다(기록 자체는 그대로).
+  const adminDecideTrip: StoreValue['adminDecideTrip'] = async (recordId, approve) => {
+    const by = user?.name || 'admin';
+    const at = new Date().toISOString();
+    const status: TripStatus = approve ? 'APPROVED' : 'REJECTED';
+    setRecords((prev) => prev.map((r) => (r.id === recordId ? { ...r, tripStatus: status, tripDecidedBy: by, tripDecidedAt: at } : r)));
+    if (supabase) await api.adminDecideTrip(recordId, status, by).catch((e) => console.warn('decide trip', e));
+  };
+
   // 관리자 대리 편집: 직원 근무기록 추가/수정 (대상 직원 id로 저장)
   const adminSaveRecord: StoreValue['adminSaveRecord'] = async (targetUserId, date, fields) => {
     const targetName = profilesById[targetUserId]?.name;
     const existing = records.find((r) => r.userId === targetUserId && r.date === date);
     const nowIso = new Date().toISOString();
+    const nextType: AttendanceType = fields.type ?? existing?.type ?? 'WORK';
+    const nextTripStatus: TripStatus | undefined =
+      nextType === 'TRIP' ? fields.tripStatus ?? existing?.tripStatus ?? 'REQUESTED' : undefined;
     const rec: AttendanceRecord = {
       ...existing,
       id: existing?.id || uid('rec'),
       userId: targetUserId,
       userName: targetName,
       date,
-      type: fields.type ?? existing?.type ?? 'WORK',
+      type: nextType,
+      // 근무로 되돌리면 출장 정보는 모두 지운다(잔여 승인 상태가 남지 않게).
+      tripSegment: nextType === 'TRIP' ? fields.tripSegment ?? existing?.tripSegment ?? 'FULL' : undefined,
+      tripStatus: nextTripStatus,
+      tripNote: nextType === 'TRIP' ? fields.tripNote ?? existing?.tripNote : undefined,
+      tripDecidedBy: nextTripStatus === 'REQUESTED' ? undefined : nextType === 'TRIP' ? user?.name : undefined,
+      tripDecidedAt: nextTripStatus === 'REQUESTED' ? undefined : nextType === 'TRIP' ? nowIso : undefined,
       checkIn: fields.checkIn === null ? undefined : fields.checkIn ?? existing?.checkIn,
       checkOut: fields.checkOut === null ? undefined : fields.checkOut ?? existing?.checkOut,
       plannedStart: fields.plannedStart ?? existing?.plannedStart,
@@ -911,6 +958,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       clearAllRecords,
       adminApproveAttendance,
       adminRejectAttendance,
+      adminDecideTrip,
       adminSaveRecord,
       adminDeleteRecord,
       requestLeave,

@@ -63,7 +63,8 @@ export function leaveStyle(t: Theme, category?: LeaveCategory | null): ToneStyle
 
 // computeDay()가 만든 한글 라벨 → tone (기존에 화면마다 흩어져 있던 정규식을 한 곳으로 모음)
 export function labelTone(label: string): Tone {
-  if (/부족|미충족|지각|미기록|결근|오류/.test(label)) return 'anomaly';
+  if (/승인대기/.test(label)) return 'pending'; // 출장 승인대기 등 — 주황
+  if (/부족|미충족|지각|미기록|결근|오류|불인정/.test(label)) return 'anomaly';
   if (/무급/.test(label)) return 'unpaid';
   if (/유급/.test(label)) return 'paid';
   if (/연차/.test(label)) return 'annual';

@@ -29,6 +29,13 @@ export interface User {
 // ---- 근태 기록 ----
 export type AttendanceType = 'WORK' | 'TRIP'; // 근무 / 출장
 
+// 출장 구간 — 종일 / 오전만 / 오후만. (오전·오후는 소정근로의 절반을 덮는다)
+export type TripSegment = 'FULL' | 'AM' | 'PM';
+// 출장 승인 상태. 출장은 사정상 소정근로를 다 못 채울 수 있으므로,
+// 관리자가 승인(APPROVED)해야 그 구간만큼 근로시간으로 인정된다.
+// 미승인(REQUESTED)·불인정(REJECTED)이면 인정 시간 0 = 기존과 동일하게 실근로만 계산.
+export type TripStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED';
+
 export interface AttendanceRecord {
   id: string;
   userId: string;
@@ -39,6 +46,11 @@ export interface AttendanceRecord {
   checkIn?: string; // 실제 출근 ISO
   checkOut?: string; // 실제 퇴근 ISO
   type: AttendanceType;
+  tripSegment?: TripSegment; // 출장 구간(type='TRIP'일 때). 미지정=종일
+  tripStatus?: TripStatus; // 출장 인정 여부. 미지정=REQUESTED(승인 대기)
+  tripNote?: string; // 출장지·목적 등
+  tripDecidedBy?: string; // 출장 승인/불인정한 관리자
+  tripDecidedAt?: string; // 결정 시각 ISO
   workplaceId?: string;
   workplaceName?: string;
   inLocation?: GeoPoint;

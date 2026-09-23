@@ -268,12 +268,13 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
       </Row>
 
       {/* 경고 뱃지 */}
-      {(o.anomalyDays > 0 || o.reviewedAnomalyDays > 0 || o.unsignedWeeks > 0 || o.pendingLeaveCount > 0 || (!o.isAdmin && !o.hireDate)) && (
+      {(o.anomalyDays > 0 || o.reviewedAnomalyDays > 0 || o.unsignedWeeks > 0 || o.pendingLeaveCount > 0 || o.pendingTripCount > 0 || (!o.isAdmin && !o.hireDate)) && (
         <Row style={{ flexWrap: 'wrap', gap: 6 }}>
           {o.anomalyDays > 0 && <Badge text={`이상 ${o.anomalyDays}일`} color={t.danger} />}
           {o.reviewedAnomalyDays > 0 && <Badge text={`✔ 확인함 ${o.reviewedAnomalyDays}일`} color={t.textFaint} />}
           {o.unsignedWeeks > 0 && <Badge text={`미서명 ${o.unsignedWeeks}주`} color={t.textDim} />}
           {o.pendingLeaveCount > 0 && <Badge text={`휴가대기 ${o.pendingLeaveCount}건`} color={t.warning} />}
+          {o.pendingTripCount > 0 && <Badge text={`✈️ 출장인정 대기 ${o.pendingTripCount}건`} color={t.trip} soft={t.tripSoft} />}
           {!o.isAdmin && !o.hireDate && <Badge text="입사일 미등록" color={t.warning} />}
         </Row>
       )}
@@ -296,7 +297,15 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           {o.reviewedAnomalyDays > 0 && <KV k="확인 처리한 이상징후" v={`${o.reviewedAnomalyDays}일`} />}
           <KV k="조기퇴근" v={`${o.month.earlyLeaveCount}회`} />
           <KV k="퇴근 미기록" v={`${o.month.missingCount}회`} />
-          <KV k="출장" v={`${o.month.tripCount}회`} />
+          <KV
+            k="출장"
+            v={
+              o.month.tripCount > 0
+                ? `${o.month.tripCount}일 · 인정 ${o.month.tripApprovedCount}일${o.month.tripPendingCount > 0 ? ` · 대기 ${o.month.tripPendingCount}일` : ''}`
+                : '없음'
+            }
+          />
+          {o.month.tripMinutes > 0 && <KV k="출장 인정근로" v={`${Math.round((o.month.tripMinutes / 60) * 10) / 10}h`} />}
           {!o.isAdmin && <KV k="사용 연차(이번달)" v={`${o.month.annualMinutes / 60}h`} />}
           {o.month.paidMinutes > 0 && <KV k="유급휴가(이번달)" v={`${o.month.paidMinutes / 60}h`} />}
           {o.month.unpaidMinutes > 0 && (

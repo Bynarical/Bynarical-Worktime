@@ -2,6 +2,7 @@
 // "정시·성실 근무 = 100(불이익 없음), 초과근무 = 100 초과, 이상/무단이탈 = 시간에 비례 감점".
 // 지각·부족·조기퇴근·무단이탈은 '얼마나'(분)를 반영해 비례 감점. 결근/코어위반/퇴근미기록은 건당.
 // 연차·유급휴가는 정상으로 간주. 종일 무급휴가는 소정근로일 자체에서 제외(감점·출근율 영향 없음).
+// 관리자가 승인한 출장(종일/오전/오후)은 그 구간만큼 근로시간으로 인정되어 감점되지 않는다.
 // 진행 중인 당일은 판정 제외.
 // 집계 창은 실제 추적 시작(연초·입사일·첫 기록/연차일 중 가장 늦은 날)부터 → 도입 전 거짓 결근 방지.
 import { AttendanceRecord, LeaveRequest, AwayLog, WorkPolicy } from './types';
@@ -161,10 +162,11 @@ export function computeAttendanceScore(
     }
     if (comp.flags.insufficient) {
       shortfallDays += 1;
-      shortfallMinutes += Math.max(0, comp.requiredMinutes - comp.workedMinutes);
+      // 승인된 출장 인정분(comp.recognizedMinutes)을 반영한 뒤 남은 부족분만 감점한다.
+      shortfallMinutes += Math.max(0, comp.requiredMinutes - comp.recognizedMinutes);
     }
     if (comp.flags.missingClockOut) missingCount += 1;
-    if (comp.flags.overtime) overtimeMinutes += Math.max(0, comp.workedMinutes - comp.requiredMinutes);
+    if (comp.flags.overtime) overtimeMinutes += Math.max(0, comp.recognizedMinutes - comp.requiredMinutes);
     if (isNormalWorkday(comp)) normalDays += 1;
   }
 

@@ -15,7 +15,7 @@ import {
 } from '@/components/ui';
 import { useStore, isActiveEmployee } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
-import { computeDay, summarize, DayComputation } from '@/lib/attendance';
+import { computeDay, summarize, DayComputation, tripOf, tripCoversWholeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
 import { SEGMENT_LABELS, LEAVE_CATEGORY_ICONS, leaveCategoryLabel } from '@/lib/leave';
 import { labelColor, leaveStyle } from '@/lib/palette';
 import { dateKey, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
@@ -40,6 +40,11 @@ export default function Approvals() {
   );
   const pendingRecs = useMemo(
     () => s.records.filter((r) => r.pending).sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [s.records]
+  );
+  // 출장 인정 대기 — 승인해야 출장 구간이 근로시간으로 인정된다.
+  const pendingTrips = useMemo(
+    () => s.records.filter((r) => tripOf(r)?.status === 'REQUESTED').sort((a, b) => (a.date < b.date ? 1 : -1)),
     [s.records]
   );
   const employees = useMemo(
@@ -114,14 +119,18 @@ export default function Approvals() {
   );
 
   function onExport() {
-    const headers = ['날짜', '유형', '계획출근', '출근', '퇴근', '실근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '야근식대(원)', '상태', '해시'];
+    const headers = ['날짜', '유형', '출장구간', '출장인정', '출장인정(분)', '계획출근', '출근', '퇴근', '실근로(분)', '인정근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '야근식대(원)', '상태', '해시'];
     const rows = dayRows.map((r) => [
       r.date,
-      r.rec?.type === 'TRIP' ? '출장' : '근무',
+      r.comp.tripSegment ? '출장' : '근무',
+      r.comp.tripSegment ? TRIP_SEGMENT_LABELS[r.comp.tripSegment] : '',
+      r.comp.tripStatus ? TRIP_STATUS_LABELS[r.comp.tripStatus] : '',
+      Math.round(r.comp.tripMinutes),
       r.rec?.plannedStart || '',
       r.rec?.checkIn ? timeHM(Date.parse(r.rec.checkIn)) : '',
       r.rec?.checkOut ? timeHM(Date.parse(r.rec.checkOut)) : '',
       Math.round(r.comp.workedMinutes),
+      Math.round(r.comp.recognizedMinutes),
       Math.round(r.comp.requiredMinutes),
       Math.round(r.comp.annualMinutes),
       Math.round(r.comp.paidMinutes),
@@ -166,6 +175,57 @@ export default function Approvals() {
               </Row>
             </Card>
           ))}
+          <Divider />
+        </>
+      )}
+
+      {/* 출장 인정(승인) 대기 */}
+      {pendingTrips.length > 0 && (
+        <>
+          <Text style={{ fontWeight: '700', color: t.textDim }}>✈️ 출장 인정 대기 ({pendingTrips.length})</Text>
+          <Muted size={12}>
+            출장은 이동·현장 사정으로 소정근로를 다 못 채울 수 있습니다. 인정하면 구간만큼(종일 {policy.dailyWorkMinutes / 60}시간 ·
+            오전/오후 {policy.dailyWorkMinutes / 120}시간) 근로시간으로 인정되어 근로부족·조기퇴근으로 잡히지 않습니다.
+          </Muted>
+          {pendingTrips.map((r) => {
+            const seg = r.tripSegment ?? 'FULL';
+            const lockedWeek = !!confirmationCovering(s.confirmations, r.userId, r.date);
+            const comp = computeDay(
+              r,
+              s.leaves.filter((l) => l.userId === r.userId && l.date === r.date && l.status === 'APPROVED'),
+              policy,
+              { dateStr: r.date, todayStr: dateKey() }
+            );
+            return (
+              <Card key={r.id} style={{ borderColor: t.trip, borderWidth: 1.5 }}>
+                <Row style={{ justifyContent: 'space-between' }}>
+                  <Row style={{ gap: 6 }}>
+                    <Body style={{ fontWeight: '700' }}>{s.profilesById[r.userId]?.name || r.userName} · {r.date}</Body>
+                    <Badge text={`✈️ ${TRIP_SEGMENT_LABELS[seg]}`} color={t.trip} soft={t.tripSoft} />
+                  </Row>
+                  <Muted size={12}>
+                    {r.checkIn ? timeHM(Date.parse(r.checkIn)) : '--:--'}
+                    {r.checkOut ? ` → ${timeHM(Date.parse(r.checkOut))}` : ' → --:--'}
+                  </Muted>
+                </Row>
+                <Muted size={12}>
+                  실근로 {minutesToKor(comp.workedMinutes)} / 소정 {minutesToKor(comp.requiredMinutes)}
+                  {comp.requiredMinutes - comp.workedMinutes > 0 ? ` · 부족 ${minutesToKor(comp.requiredMinutes - comp.workedMinutes)}` : ' · 부족 없음'}
+                </Muted>
+                {r.tripNote ? <Muted size={11}>사유 · {r.tripNote}</Muted> : null}
+                {lockedWeek ? (
+                  <Muted size={12} style={{ color: t.danger }}>
+                    🔒 확인·서명으로 잠긴 주간이라 인정 처리를 할 수 없습니다. 직원이 [이력]에서 서명을 해제해야 합니다.
+                  </Muted>
+                ) : (
+                  <Row>
+                    <Button label="출장 인정" variant="success" small style={{ flex: 1 }} onPress={() => s.adminDecideTrip(r.id, true)} />
+                    <Button label="불인정" variant="danger" small style={{ flex: 1 }} onPress={() => s.adminDecideTrip(r.id, false)} />
+                  </Row>
+                )}
+              </Card>
+            );
+          })}
           <Divider />
         </>
       )}
@@ -252,6 +312,17 @@ export default function Approvals() {
               <StatTile onHero label="지각" value={`${summary.lateCount}회`} />
               <StatTile onHero label="코어위반" value={`${summary.coreViolationCount}회`} />
             </Row>
+            {summary.tripCount > 0 && (
+              <Row style={{ gap: 8 }}>
+                <StatTile
+                  onHero
+                  label="출장"
+                  value={`${summary.tripCount}일`}
+                  sub={`인정 ${summary.tripApprovedCount}일${summary.tripPendingCount > 0 ? ` · 대기 ${summary.tripPendingCount}일` : ''}`}
+                />
+                <StatTile onHero label="출장 인정근로" value={minutesToKor(summary.tripMinutes)} />
+              </Row>
+            )}
             <Pressable
               onPress={onExport}
               style={{ backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}
@@ -360,9 +431,10 @@ function DayCard({
       {!comp.isFullLeave && (
         <Row style={{ gap: 8, flexWrap: 'wrap' }}>
           <KVInline k="실근로" v={minutesToKor(comp.workedMinutes)} />
+          {comp.tripMinutes > 0 ? <KVInline k="출장인정" v={minutesToKor(comp.tripMinutes)} color={t.trip} /> : null}
           <KVInline k="소정" v={minutesToKor(comp.requiredMinutes)} />
           <KVInline k="차이" v={`${comp.diffMinutes >= 0 ? '+' : ''}${minutesToKor(comp.diffMinutes)}`} color={comp.diffMinutes >= 0 ? t.success : t.danger} />
-          {comp.expectedOutMin ? <KVInline k="퇴근가능" v={minutesToHM(comp.expectedOutMin)} /> : null}
+          {comp.expectedOutMin ? <KVInline k="퇴근가능" v={tripCoversWholeDay(comp) ? "출장 인정" : minutesToHM(comp.expectedOutMin)} /> : null}
         </Row>
       )}
       {comp.labels.length > 0 && (

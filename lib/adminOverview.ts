@@ -1,6 +1,6 @@
 // 관리자 종합 현황: 직원 1명의 연차·근태·서명·이상징후를 한 번에 계산.
 import { AttendanceRecord, LeaveRequest, LeaveAdjustment, Confirmation, WorkPolicy, LeavePolicy, User, MealAllowance, LeaveCategory } from './types';
-import { computeDay, summarize, PeriodSummary } from './attendance';
+import { computeDay, summarize, tripOf, PeriodSummary } from './attendance';
 import { computeBalance, LeaveBalance } from './leave';
 import { weekStartKey } from './time';
 
@@ -22,6 +22,7 @@ export interface EmployeeOverview {
     leaveCategory: LeaveCategory | null; // 오늘 휴가 종류(연차/유급/무급)
   };
   pendingLeaveCount: number;
+  pendingTripCount: number; // 인정(승인) 대기 중인 출장 일수 — 전체 기간
   unsignedWeeks: number; // 기록이 있으나 서명 안 된 주 수
   anomalyDays: number; // 이번 달 지각/코어위반/부족/미기록 발생 일수 (관리자가 확인한 날은 제외)
   reviewedAnomalyDays: number; // 그중 관리자가 이미 확인 처리한 일수
@@ -107,6 +108,8 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     : null;
 
   const pendingLeaveCount = inp.leaves.filter((l) => l.userId === id && l.status === 'REQUESTED').length;
+  // 출장 인정 대기 — 승인해야 그 구간이 근로시간으로 인정되므로 관리자가 놓치지 않게 표시한다.
+  const pendingTripCount = inp.records.filter((r) => r.userId === id && tripOf(r)?.status === 'REQUESTED').length;
   const monthMeals = (inp.meals || [])
     .filter((m) => m.userId === id && m.date.startsWith(inp.monthPrefix))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -117,6 +120,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
   const isAdmin = !!p?.isAdmin;
   const hasWarning =
     anomalyDays > 0 ||
+    pendingTripCount > 0 ||
     unsignedWeeks > 0 ||
     (!isAdmin && (!p?.hireDate || (balance != null && balance.availableNowHours < 0)));
 
@@ -136,6 +140,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
       leaveCategory: todayComp?.leaveCategory ?? null,
     },
     pendingLeaveCount,
+    pendingTripCount,
     unsignedWeeks,
     anomalyDays,
     reviewedAnomalyDays,

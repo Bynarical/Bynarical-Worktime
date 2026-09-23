@@ -33,6 +33,11 @@ function recToRow(r: AttendanceRecord, userId: string) {
     check_in: r.checkIn ?? null,
     check_out: r.checkOut ?? null,
     type: r.type,
+    trip_segment: r.type === 'TRIP' ? r.tripSegment ?? 'FULL' : null,
+    trip_status: r.type === 'TRIP' ? r.tripStatus ?? 'REQUESTED' : null,
+    trip_note: r.tripNote ?? null,
+    trip_decided_by: r.tripDecidedBy ?? null,
+    trip_decided_at: r.tripDecidedAt ?? null,
     workplace_id: r.workplaceId ?? null,
     workplace_name: r.workplaceName ?? null,
     in_lat: r.inLocation?.lat ?? null,
@@ -59,6 +64,13 @@ function recFromRow(row: any): AttendanceRecord {
     checkIn: row.check_in || undefined,
     checkOut: row.check_out || undefined,
     type: row.type || 'WORK',
+    // 출장 컬럼(supabase/trip.sql)이 아직 없는 DB에서도 동작하도록 전부 선택값으로 읽는다.
+    tripSegment: row.trip_segment === 'AM' ? 'AM' : row.trip_segment === 'PM' ? 'PM' : row.trip_segment === 'FULL' ? 'FULL' : undefined,
+    tripStatus:
+      row.trip_status === 'APPROVED' ? 'APPROVED' : row.trip_status === 'REJECTED' ? 'REJECTED' : row.trip_status === 'REQUESTED' ? 'REQUESTED' : undefined,
+    tripNote: row.trip_note || undefined,
+    tripDecidedBy: row.trip_decided_by || undefined,
+    tripDecidedAt: row.trip_decided_at || undefined,
     workplaceId: row.workplace_id || undefined,
     workplaceName: row.workplace_name || undefined,
     inLocation: row.in_lat != null ? { lat: row.in_lat, lng: row.in_lng } : undefined,
@@ -208,8 +220,22 @@ export async function fetchRecords(): Promise<AttendanceRecord[]> {
   return (data || []).map(recFromRow);
 }
 export async function upsertRecord(r: AttendanceRecord, userId: string) {
-  const { error } = await sb().from('records').upsert(recToRow(r, userId), { onConflict: 'id' });
-  if (error) throw error;
+  const row = recToRow(r, userId) as Record<string, unknown>;
+  const { error } = await sb().from('records').upsert(row, { onConflict: 'id' });
+  if (!error) return;
+  // 출장 컬럼(supabase/trip.sql)이 아직 적용되지 않은 DB 하위호환 —
+  // 출장 필드만 빼고 재시도해서 출퇴근 기록 자체는 절대 실패하지 않게 한다.
+  if (/trip_/.test(error.message || '')) {
+    const legacy = { ...row };
+    ['trip_segment', 'trip_status', 'trip_note', 'trip_decided_by', 'trip_decided_at'].forEach((k) => delete legacy[k]);
+    const { error: e2 } = await sb().from('records').upsert(legacy, { onConflict: 'id' });
+    if (!e2) {
+      console.warn('records: 출장 컬럼이 없습니다 — supabase/trip.sql 을 실행하세요.');
+      return;
+    }
+    throw e2;
+  }
+  throw error;
 }
 export async function deleteRecordsOf(userId: string) {
   await sb().from('records').delete().eq('user_id', userId);
@@ -290,6 +316,16 @@ export async function adminApproveRecord(id: string, approvedBy: string) {
 }
 export async function adminDeleteRecord(id: string) {
   const { error } = await sb().from('records').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ---------- 출장 인정(관리자) ----------
+// 승인(APPROVED)하면 그 날 출장 구간만큼 근로시간이 인정된다. 불인정(REJECTED)이면 실근로만 인정.
+export async function adminDecideTrip(id: string, status: 'APPROVED' | 'REJECTED', decidedBy: string) {
+  const { error } = await sb()
+    .from('records')
+    .update({ trip_status: status, trip_decided_by: decidedBy, trip_decided_at: new Date().toISOString() })
+    .eq('id', id);
   if (error) throw error;
 }
 
