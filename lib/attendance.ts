@@ -130,6 +130,8 @@ export interface DayComputation {
   isFullLeave: boolean;
   leaveCategory: LeaveCategory | null; // 그날의 대표 휴가 종류(종일 휴가 우선 → 시간 많은 순). 휴가 없으면 null
   effectiveStartMin: number; // 적용 출근시각(반올림)
+  lateMinutes: number; // 지각 시간(분) — 출근 허용시각(오전 연차·출장 반영) 기준
+  coreEndMissed: boolean; // 코어 종료 전 퇴근(코어 끝쪽 미충족) — 지각과 별개 사건
   flags: {
     late: boolean; // 지각(적용 출근이 최대 출근시각 초과)
     coreViolation: boolean; // 코어타임 미충족
@@ -247,6 +249,7 @@ export function computeDay(
   // 이상징후는 "종료된 날(과거일)"에만 판정한다. 진행 중인 당일은 아직 퇴근 전이라
   // 미퇴근/부족 등이 정상 상황이므로 플래그를 매기지 않는다(하루가 지난 뒤 표시).
   const isClosedDay = opts.todayStr ? dateStr < opts.todayStr : true;
+  let coreEndMissed = false;
 
   if (!isFullLeave && isWorkday && isClosedDay) {
     if (hasCheckIn && plannedStartMin > allowedClockIn + 0.01) flags.late = true;
@@ -258,6 +261,7 @@ export function computeDay(
         (c) => checkInMin != null && checkInMin <= c.s + 0.01 && checkOutMin >= c.e - 0.01
       );
       if (effectiveCore.length > 0 && !covered) flags.coreViolation = true;
+      coreEndMissed = effectiveCore.some((c) => checkOutMin < c.e - 0.01);
       if (recognizedMinutes < requiredMinutes - 0.01) flags.insufficient = true;
       if (recognizedMinutes > requiredMinutes + 0.01) flags.overtime = true;
     }
@@ -297,6 +301,8 @@ export function computeDay(
     plannedStartMin,
     plannedEndMin,
     effectiveStartMin,
+    lateMinutes: flags.late ? Math.max(0, effectiveStartMin - allowedClockIn) : 0,
+    coreEndMissed,
     expectedInMin,
     expectedOutMin,
     workedMinutes,

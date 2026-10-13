@@ -75,7 +75,6 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
               <DedRow label={`무단결근 ${score.absentDays}일`} points={score.absentDays * w.absentPerDay} />
               <DedRow label={`근로부족 ${score.shortfallDays}회`} detail={`${score.shortfallMinutes}분`} points={(score.shortfallMinutes * w.shortfallPerHour) / 60} />
               <DedRow label={`지각 ${score.lateCount}회`} detail={`${score.lateMinutes}분`} points={(score.lateMinutes * w.latePerHour) / 60} />
-              <DedRow label={`조기퇴근 ${score.earlyLeaveCount}회`} detail={`${score.earlyLeaveMinutes}분`} points={(score.earlyLeaveMinutes * w.earlyLeavePerHour) / 60} />
               <DedRow
                 label={`무단이탈 ${score.awayCount}건`}
                 detail={`${score.awayMinutes}분${score.awayCount > w.awayFreeCount ? ' · 잦음 가중' : ''}`}
@@ -83,12 +82,19 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
               />
               <DedRow label={`코어타임 미충족 ${score.coreViolationCount}회`} points={score.coreViolationCount * w.coreViolation} />
               <DedRow label={`퇴근 미기록 ${score.missingCount}회`} points={score.missingCount * w.missing} />
+              {score.dayCapRelief > 0 ? (
+                <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Muted size={12}>하루 감점 상한(무단결근 {w.absentPerDay}점) 적용</Muted>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: t.success }}>+{r1(score.dayCapRelief)}</Text>
+                </Row>
+              ) : null}
             </>
           ) : (
             <Muted size={12}>감점 없음 — 성실 근무 👍</Muted>
           )}
           <Muted size={11} style={{ marginTop: 4 }}>
-            지각·부족·조기퇴근은 시간(분)에 비례, 무단이탈은 시간 + 잦을수록 가중 감점. 연차·유급휴가는 정상,
+            지각·부족은 시간(분)에 비례(조기퇴근은 근로부족으로 한 번만), 지각한 날의 코어타임 미충족은 지각으로 갈음,
+            하루 감점은 무단결근을 넘지 않음. 무단이탈은 시간 + 잦을수록 가중 감점. 연차·유급휴가는 정상,
             종일 무급휴가는 소정근로일에서 제외(감점·출근율 영향 없음). 100점 = A, 초과근무 가점 시 100 초과(S).
           </Muted>
         </>

@@ -1,27 +1,28 @@
 // 연간 근태 점수 — 감점(이상)+가점(초과근무) · analog(분 단위 비례) 방식.
 // "정시·성실 근무 = 100(불이익 없음), 초과근무 = 100 초과, 이상/무단이탈 = 시간에 비례 감점".
-// 지각·부족·조기퇴근·무단이탈은 '얼마나'(분)를 반영해 비례 감점. 결근/코어위반/퇴근미기록은 건당.
+// 지각·부족·무단이탈은 '얼마나'(분)를 반영해 비례 감점. 결근/코어위반/퇴근미기록은 건당.
+// 같은 일을 두 번 세지 않는다: 잃은 근로시간은 근로부족에서만(조기퇴근은 따로 감점 안 함),
+// 지각한 날의 코어 시작 미충족은 지각으로 갈음. 하루 감점은 무단결근을 넘지 않는다.
 // 연차·유급휴가는 정상으로 간주. 종일 무급휴가는 소정근로일 자체에서 제외(감점·출근율 영향 없음).
 // 관리자가 승인한 출장(종일/오전/오후)은 그 구간만큼 근로시간으로 인정되어 감점되지 않는다.
 // 진행 중인 당일은 판정 제외.
 // 집계 창은 실제 추적 시작(연초·입사일·첫 기록/연차일 중 가장 늦은 날)부터 → 도입 전 거짓 결근 방지.
 import { AttendanceRecord, LeaveRequest, AwayLog, WorkPolicy } from './types';
-import { addDaysKey, weekday, dateKeyToMs, hmToMinutes } from './time';
+import { addDaysKey, weekday, dateKeyToMs } from './time';
 import { computeDay, isNormalWorkday } from './attendance';
 
 export const SCORE_WEIGHTS = {
   // 시간 비례 감점(시간당 점수) — analog
   latePerHour: 3, // 지각(늦은 시간)
-  shortfallPerHour: 3, // 근로부족(부족한 시간)
-  earlyLeavePerHour: 2.5, // 조기퇴근(일찍 간 시간)
+  shortfallPerHour: 3, // 근로부족(부족한 시간) — 조기퇴근으로 빠진 시간도 여기서 한 번만 감점
   awayPerHour: 3, // 무단이탈(관리자 기록) 시간 비례 기본 감점
   awayFreeCount: 3, // 이 횟수까지는 빈도 가중 없음(일시적 개인사정 이해)
   awayRepeatPenalty: 5, // 초과 1회당 추가 감점(정기·잦은 이탈 = 큰 불이익)
   overtimePerHour: 0.25, // 초과근무 가점(시간당) = 4시간당 +1 (열심히 한 사람 우대)
   overtimeCap: 25, // 초과근무 가점 상한
   // 건당 감점(이벤트성)
-  absentPerDay: 5, // 무단결근 /일
-  coreViolation: 3, // 코어타임 미충족 /회
+  absentPerDay: 27, // 무단결근 /일 = 하루 통째 근로부족(8h×3) + 코어 미충족(3). 하루 감점의 상한이기도 함
+  coreViolation: 3, // 코어타임 미충족 /회 (지각한 날은 코어 종료 전 퇴근일 때만)
   missing: 1, // 퇴근 미기록 /회
 };
 
@@ -41,8 +42,6 @@ export interface AttendanceScore {
   lateCount: number;
   lateMinutes: number;
   coreViolationCount: number;
-  earlyLeaveCount: number;
-  earlyLeaveMinutes: number;
   shortfallDays: number;
   shortfallMinutes: number;
   missingCount: number;
@@ -50,6 +49,7 @@ export interface AttendanceScore {
   awayMinutes: number;
   overtimeMinutes: number;
   overtimeBonus: number; // 가점(점수)
+  dayCapRelief: number; // 하루 감점 상한(무단결근) 초과로 되돌린 점수
   deductionTotal: number; // 감점(점수)
   ratePct: number | null;
 }
@@ -74,8 +74,8 @@ export function computeAttendanceScore(
   hireDate?: string,
   awayLogs: AwayLog[] = []
 ): AttendanceScore {
+  const w = SCORE_WEIGHTS;
   const workdaySet = new Set(workPolicy.workdays);
-  const latestClockIn = hmToMinutes(workPolicy.latestClockIn);
   const yearStart = `${year}-01-01`;
   const yearEndExcl = `${year + 1}-01-01`;
   const tomorrow = addDaysKey(today, 1);
@@ -112,12 +112,11 @@ export function computeAttendanceScore(
   let lateCount = 0;
   let lateMinutes = 0;
   let coreViolationCount = 0;
-  let earlyLeaveCount = 0;
-  let earlyLeaveMinutes = 0;
   let shortfallDays = 0;
   let shortfallMinutes = 0;
   let missingCount = 0;
   let overtimeMinutes = 0;
+  let dayCapRelief = 0;
   let attended = 0;
 
   let d = start;
@@ -151,20 +150,30 @@ export function computeAttendanceScore(
       continue;
     }
     workedDays += 1;
+    let dayLateMin = 0;
+    let dayShortMin = 0;
+    let dayCore = false;
     if (comp.flags.late) {
       lateCount += 1;
-      lateMinutes += Math.max(0, comp.effectiveStartMin - latestClockIn);
+      dayLateMin = comp.lateMinutes;
     }
-    if (comp.flags.coreViolation) coreViolationCount += 1;
-    if (comp.flags.earlyLeave) {
-      earlyLeaveCount += 1;
-      if (comp.checkOutMin != null) earlyLeaveMinutes += Math.max(0, comp.expectedOutMin - comp.checkOutMin);
+    // 지각한 날의 코어 시작 미충족은 지각으로 이미 감점 → 코어 종료 전에 퇴근했을 때만 따로 센다.
+    if (comp.flags.coreViolation && (!comp.flags.late || comp.coreEndMissed)) {
+      coreViolationCount += 1;
+      dayCore = true;
     }
+    // 조기퇴근은 그만큼 근로부족으로 잡히므로 따로 감점하지 않는다.
     if (comp.flags.insufficient) {
       shortfallDays += 1;
       // 승인된 출장 인정분(comp.recognizedMinutes)을 반영한 뒤 남은 부족분만 감점한다.
-      shortfallMinutes += Math.max(0, comp.requiredMinutes - comp.recognizedMinutes);
+      dayShortMin = Math.max(0, comp.requiredMinutes - comp.recognizedMinutes);
     }
+    lateMinutes += dayLateMin;
+    shortfallMinutes += dayShortMin;
+    // 출근한 날이 아예 안 나온 날보다 무거우면 안 된다 → 하루 감점은 무단결근 감점이 상한.
+    const dayDeduction =
+      (dayLateMin * w.latePerHour + dayShortMin * w.shortfallPerHour) / 60 + (dayCore ? w.coreViolation : 0);
+    dayCapRelief += Math.max(0, dayDeduction - w.absentPerDay);
     if (comp.flags.missingClockOut) missingCount += 1;
     if (comp.flags.overtime) overtimeMinutes += Math.max(0, comp.recognizedMinutes - comp.requiredMinutes);
     if (isNormalWorkday(comp)) normalDays += 1;
@@ -175,14 +184,12 @@ export function computeAttendanceScore(
   const awayCount = myAway.length;
   const awayMinutes = myAway.reduce((s, a) => s + (a.minutes || 0), 0);
 
-  const w = SCORE_WEIGHTS;
-  const analogDeduction =
-    (lateMinutes * w.latePerHour + shortfallMinutes * w.shortfallPerHour + earlyLeaveMinutes * w.earlyLeavePerHour) / 60;
+  const analogDeduction = (lateMinutes * w.latePerHour + shortfallMinutes * w.shortfallPerHour) / 60;
   // 무단이탈: 시간 비례 기본 감점 + 잦을수록(빈도) 가중. 일시적(freeCount 이하)이면 가중 없음.
   const awayDeduction =
     (awayMinutes / 60) * w.awayPerHour + Math.max(0, awayCount - w.awayFreeCount) * w.awayRepeatPenalty;
   const eventDeduction = absentDays * w.absentPerDay + coreViolationCount * w.coreViolation + missingCount * w.missing;
-  const deductionTotal = analogDeduction + awayDeduction + eventDeduction;
+  const deductionTotal = analogDeduction + awayDeduction + eventDeduction - dayCapRelief;
   const overtimeBonus = Math.min(w.overtimeCap, (overtimeMinutes / 60) * w.overtimePerHour);
   const rawScore = 100 - deductionTotal + overtimeBonus;
   const score = Math.round(Math.max(0, Math.min(100 + w.overtimeCap, rawScore)));
@@ -201,8 +208,6 @@ export function computeAttendanceScore(
     lateCount,
     lateMinutes,
     coreViolationCount,
-    earlyLeaveCount,
-    earlyLeaveMinutes,
     shortfallDays,
     shortfallMinutes,
     missingCount,
@@ -210,6 +215,7 @@ export function computeAttendanceScore(
     awayMinutes,
     overtimeMinutes,
     overtimeBonus,
+    dayCapRelief,
     deductionTotal,
     ratePct: scheduledDays > 0 ? (attended / scheduledDays) * 100 : null,
   };
