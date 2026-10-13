@@ -22,12 +22,24 @@ import { dateKey, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
 import { confirmationCovering, verifyConfirmation } from '@/lib/confirmation';
 import { toCsv, exportCsv } from '@/lib/csv';
-import { AttendanceRecord, MealAllowance } from '@/lib/types';
+import { AttendanceRecord, GeoPoint, MealAllowance, Workplace } from '@/lib/types';
+import { nearestWorkplace, PRECISE_MAX_ACCURACY_M } from '@/lib/geo';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
 import { MealLine } from '@/components/MealLine';
 import { AdminDayEditor } from '@/components/AdminDayEditor';
 import { computeAttendanceScore } from '@/lib/attendanceScore';
 import { AttendanceScoreCard } from '@/components/AttendanceScoreCard';
+
+// 승인 판단용 출근 위치 — 근무지까지 거리와 위치 오차(오차가 크면 정말 밖이었는지 알 수 없음)
+function inLocationLine(p: GeoPoint, workplaces: Workplace[]): string {
+  const n = nearestWorkplace(p, workplaces);
+  const where = n.workplace ? ` · ${n.workplace.name}까지 ${Math.round(n.distance)}m` : '';
+  const acc =
+    p.accuracy != null
+      ? ` · 오차 ±${Math.round(p.accuracy)}m${p.accuracy > PRECISE_MAX_ACCURACY_M ? ' (정확한 위치 아님)' : ''}`
+      : '';
+  return `출근 위치 ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}${where}${acc}`;
+}
 
 export default function Approvals() {
   const s = useStore();
@@ -168,7 +180,7 @@ export default function Approvals() {
                 </Row>
                 <Muted size={12}>{r.checkIn ? timeHM(Date.parse(r.checkIn)) : '--:--'}{r.checkOut ? ` → ${timeHM(Date.parse(r.checkOut))}` : ''}</Muted>
               </Row>
-              {r.inLocation ? <Muted size={11}>출근 위치 {r.inLocation.lat.toFixed(5)}, {r.inLocation.lng.toFixed(5)}</Muted> : null}
+              <Muted size={11}>{r.inLocation ? inLocationLine(r.inLocation, s.settings.workplaces) : '출근 위치 없음'}</Muted>
               <Row>
                 <Button label="출근 인정" variant="success" small style={{ flex: 1 }} onPress={() => s.adminApproveAttendance(r.id)} />
                 <Button label="반려(삭제)" variant="danger" small style={{ flex: 1 }} onPress={() => s.adminRejectAttendance(r.id)} />

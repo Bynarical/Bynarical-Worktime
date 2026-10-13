@@ -42,9 +42,11 @@ function recToRow(r: AttendanceRecord, userId: string) {
     workplace_name: r.workplaceName ?? null,
     in_lat: r.inLocation?.lat ?? null,
     in_lng: r.inLocation?.lng ?? null,
+    in_accuracy: r.inLocation?.accuracy ?? null,
     in_verified: r.inVerified ?? null,
     out_lat: r.outLocation?.lat ?? null,
     out_lng: r.outLocation?.lng ?? null,
+    out_accuracy: r.outLocation?.accuracy ?? null,
     out_verified: r.outVerified ?? null,
     pending: r.pending ?? false,
     approved_by: r.approvedBy ?? null,
@@ -73,8 +75,8 @@ function recFromRow(row: any): AttendanceRecord {
     tripDecidedAt: row.trip_decided_at || undefined,
     workplaceId: row.workplace_id || undefined,
     workplaceName: row.workplace_name || undefined,
-    inLocation: row.in_lat != null ? { lat: row.in_lat, lng: row.in_lng } : undefined,
-    outLocation: row.out_lat != null ? { lat: row.out_lat, lng: row.out_lng } : undefined,
+    inLocation: row.in_lat != null ? { lat: row.in_lat, lng: row.in_lng, accuracy: row.in_accuracy ?? undefined } : undefined,
+    outLocation: row.out_lat != null ? { lat: row.out_lat, lng: row.out_lng, accuracy: row.out_accuracy ?? undefined } : undefined,
     inVerified: row.in_verified ?? undefined,
     outVerified: row.out_verified ?? undefined,
     pending: row.pending ?? undefined,
@@ -223,14 +225,19 @@ export async function upsertRecord(r: AttendanceRecord, userId: string) {
   const row = recToRow(r, userId) as Record<string, unknown>;
   const { error } = await sb().from('records').upsert(row, { onConflict: 'id' });
   if (!error) return;
-  // 출장 컬럼(supabase/trip.sql)이 아직 적용되지 않은 DB 하위호환 —
-  // 출장 필드만 빼고 재시도해서 출퇴근 기록 자체는 절대 실패하지 않게 한다.
-  if (/trip_/.test(error.message || '')) {
+  // 나중에 추가된 컬럼(supabase/trip.sql · location_accuracy.sql)이 아직 적용되지 않은 DB 하위호환 —
+  // 그 필드만 빼고 재시도해서 출퇴근 기록 자체는 절대 실패하지 않게 한다.
+  const msg = error.message || '';
+  const missing = [
+    ...(/trip_/.test(msg) ? ['trip_segment', 'trip_status', 'trip_note', 'trip_decided_by', 'trip_decided_at'] : []),
+    ...(/_accuracy/.test(msg) ? ['in_accuracy', 'out_accuracy'] : []),
+  ];
+  if (missing.length) {
     const legacy = { ...row };
-    ['trip_segment', 'trip_status', 'trip_note', 'trip_decided_by', 'trip_decided_at'].forEach((k) => delete legacy[k]);
+    missing.forEach((k) => delete legacy[k]);
     const { error: e2 } = await sb().from('records').upsert(legacy, { onConflict: 'id' });
     if (!e2) {
-      console.warn('records: 출장 컬럼이 없습니다 — supabase/trip.sql 을 실행하세요.');
+      console.warn(`records: ${missing.join(', ')} 컬럼이 없습니다 — npm run db:migrate 로 supabase/ 마이그레이션을 적용하세요.`);
       return;
     }
     throw e2;

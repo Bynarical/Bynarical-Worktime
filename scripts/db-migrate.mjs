@@ -48,6 +48,7 @@ const MIGRATIONS = [
   'anomaly_review.sql',
   'trip.sql',
   'workplace_pin_70m.sql',
+  'location_accuracy.sql',
 ];
 
 const TRACK = 'app_private.sql_migrations';
