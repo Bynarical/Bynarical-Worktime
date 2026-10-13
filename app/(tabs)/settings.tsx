@@ -17,7 +17,8 @@ import {
 import { useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { HelpManual } from '@/components/HelpManual';
-import { getCurrentPoint, parseCoords } from '@/lib/geo';
+import { getPreciseFix, parseCoords } from '@/lib/geo';
+import { DEFAULT_RADIUS_M } from '@/lib/config';
 import { WorkPolicy } from '@/lib/types';
 
 export default function Settings() {
@@ -90,25 +91,27 @@ function WorkplacesCard() {
   const t = useTheme();
   const [name, setName] = useState('');
   const [coords, setCoords] = useState('');
-  const [radius, setRadius] = useState('150');
+  const [radius, setRadius] = useState(String(DEFAULT_RADIUS_M));
   const [msg, setMsg] = useState('');
 
+  // 근무지 핀은 반경 판정의 기준이라 정확한 위치로만 찍는다
   async function useCurrent() {
-    setMsg('위치 확인 중...');
-    const p = await getCurrentPoint();
-    if (p) {
-      setCoords(`${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`);
-      setMsg('현재 위치를 입력했습니다.');
-    } else setMsg('위치를 가져오지 못했습니다.');
+    setMsg('정확한 위치 확인 중... (몇 초 걸릴 수 있어요)');
+    const fix = await getPreciseFix();
+    if (fix.ok) {
+      setCoords(`${fix.point.lat.toFixed(6)}, ${fix.point.lng.toFixed(6)}`);
+      setMsg(`현재 위치를 입력했습니다 (오차 ±${Math.round(fix.point.accuracy ?? 0)}m).`);
+    } else if (fix.reason === 'approximate') setMsg("정확한 위치가 아닙니다. '정확한 위치'를 켜고 다시 시도하세요.");
+    else setMsg('위치를 가져오지 못했습니다.');
   }
 
   async function add() {
     const p = parseCoords(coords);
     if (!name.trim()) return setMsg('근무지 이름을 입력하세요.');
     if (!p) return setMsg('좌표 또는 Google Maps 링크를 확인하세요.');
-    const r = parseInt(radius, 10) || 150;
+    const r = parseInt(radius, 10) || DEFAULT_RADIUS_M;
     await s.addWorkplace({ name: name.trim(), lat: p.lat, lng: p.lng, radius: r });
-    setName(''); setCoords(''); setRadius('150'); setMsg('✓ 근무지가 추가되었습니다.');
+    setName(''); setCoords(''); setRadius(String(DEFAULT_RADIUS_M)); setMsg('✓ 근무지가 추가되었습니다.');
   }
 
   return (

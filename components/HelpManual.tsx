@@ -67,6 +67,11 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
             <Card>
               <Section emoji="🕒" title="출근 · 퇴근 (오늘 탭)">
                 <Step>회사 근무지 <Text style={{ fontWeight: '700' }}>반경 안</Text>에서 <Text style={{ fontWeight: '700' }}>출근</Text> 버튼을 누르면 위치와 함께 출근이 기록됩니다.</Step>
+                <Step>
+                  위치는 <Text style={{ fontWeight: '700' }}>정확한 위치</Text>로만 확인합니다. 대략적인 위치로는 반경 확인이 안 되어 관리자 승인이 필요합니다.
+                  {'\n'}· 아이폰: 설정 › 개인정보 보호 및 보안 › 위치 서비스 › Safari 웹 사이트(또는 이 앱) › '정확한 위치' 켜기
+                  {'\n'}· 안드로이드: 설정 › 애플리케이션 › Chrome(또는 이 앱) › 권한 › 위치 › '정확한 위치 사용' 켜기
+                </Step>
                 <Step>코어타임 <Text style={{ fontWeight: '700' }}>{wp.coreStart}–{wp.coreEnd}</Text>는 반드시 근무, 휴게 <Text style={{ fontWeight: '700' }}>{wp.breakStart}–{wp.breakEnd}</Text>는 근로시간에서 자동 제외됩니다.</Step>
                 <Step>출근하면 <Text style={{ fontWeight: '700' }}>예상 퇴근 시각</Text>과 남은 시간이 표시됩니다. 소정근로({wp.dailyWorkMinutes / 60}시간)를 채우면 퇴근 가능.</Step>
                 <Step>퇴근할 때 <Text style={{ fontWeight: '700' }}>퇴근</Text> 버튼을 꼭 눌러주세요. (안 누르면 '퇴근 미기록')</Step>

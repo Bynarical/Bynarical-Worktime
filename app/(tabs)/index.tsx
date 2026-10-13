@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -23,12 +23,12 @@ import {
 import { useStore } from '@/lib/store';
 import { HelpManual } from '@/components/HelpManual';
 import { SignReminderPopup } from '@/components/SignReminderPopup';
-import { getCurrentPoint, nearestWorkplace } from '@/lib/geo';
+import { getPreciseFix, nearestWorkplace, PreciseFix } from '@/lib/geo';
 import { computeDay, workEndMinutes, tripCoversWholeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
 import { LEAVE_CATEGORY_ICONS, leaveCategoryLabel } from '@/lib/leave';
 import { labelColor, leaveStyle } from '@/lib/palette';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
-import { TripSegment, Workplace } from '@/lib/types';
+import { GeoPoint, TripSegment, Workplace } from '@/lib/types';
 import { MEAL_DAILY_LIMIT, CONSENT_TEXT } from '@/lib/config';
 
 function useNow(intervalMs = 15000) {
@@ -41,6 +41,20 @@ function useNow(intervalMs = 15000) {
 }
 
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
+
+// 위치 오차 표시 — ", 오차 ±12m"
+function accLabel(p?: GeoPoint): string {
+  return p?.accuracy != null ? `, 오차 ±${Math.round(p.accuracy)}m` : '';
+}
+
+// 반경 판정에 쓸 수 없는 위치일 때 안내. 정확한 위치면 null.
+function fixProblem(fix: PreciseFix): string | null {
+  if (fix.ok) return null;
+  if (fix.reason === 'denied') return '위치 권한이 꺼져 있습니다. 위치 권한을 허용하거나 출장 모드를 사용하세요.';
+  if (fix.reason === 'approximate')
+    return `정확한 위치가 아닙니다${fix.point?.accuracy != null ? ` (오차 ±${Math.round(fix.point.accuracy)}m)` : ''}. 휴대폰 설정에서 이 앱(또는 브라우저)의 '정확한 위치'를 켜고 다시 시도하세요. 이미 켜져 있다면 창가 등 신호가 잘 잡히는 곳에서 다시 시도하세요.`;
+  return '위치를 가져오지 못했습니다. 위치 서비스를 켜거나 출장 모드를 사용하세요.';
+}
 
 export default function Today() {
   const s = useStore();
@@ -109,25 +123,30 @@ export default function Today() {
   const remaining = Math.max(0, comp.requiredMinutes - comp.recognizedMinutes);
   const progress = comp.requiredMinutes > 0 ? comp.recognizedMinutes / comp.requiredMinutes : 0;
 
+  // 직전 측정 결과 — [승인요청 출근]·[출장으로 기록]을 누를 때 몇 초씩 다시 기다리지 않게 1분간 재사용
+  const lastFix = useRef<{ at: number; fix: PreciseFix } | null>(null);
+  async function measure(reuse: boolean): Promise<PreciseFix> {
+    const prev = lastFix.current;
+    if (reuse && prev && new Date().getTime() - prev.at < 60000) return prev.fix;
+    setGeoMsg('정확한 위치 확인 중... (몇 초 걸릴 수 있어요)');
+    const fix = await getPreciseFix();
+    lastFix.current = { at: new Date().getTime(), fix };
+    return fix;
+  }
+
   async function doCheckIn(kind: 'WORK' | 'TRIP', override = false) {
     if (busy) return;
     setBusy(true);
-    setGeoMsg('위치 확인 중...');
-    const point = await getCurrentPoint();
-    let workplace: Workplace | null = null;
-    let within = false;
-    let dist = Infinity;
-    if (point) {
-      const n = nearestWorkplace(point, s.settings.workplaces);
-      workplace = n.workplace;
-      within = n.within;
-      dist = n.distance;
-    }
+    const fix = await measure(override);
+    const point = fix.point;
+    const n = point ? nearestWorkplace(point, s.settings.workplaces) : null;
+    const workplace: Workplace | null = n?.workplace ?? null;
+    const dist = n?.distance ?? Infinity;
+    const within = fix.ok && !!n?.within; // 정확한 위치일 때만 반경 내로 인정
     if (kind === 'WORK' && !within && !override) {
       setGeoMsg(
-        point
-          ? `근무지 반경 밖입니다 (${workplace?.name ?? '가장 가까운 근무지'}까지 ${Math.round(dist)}m). 출장이 아니라면 위치를 확인하세요.`
-          : '위치를 가져오지 못했습니다. 권한을 확인하거나 출장 모드를 사용하세요.'
+        fixProblem(fix) ??
+          `근무지 반경 밖입니다 (${workplace?.name ?? '가장 가까운 근무지'}까지 ${Math.round(dist)}m${accLabel(point)}). 출장이 아니라면 위치를 확인하세요.`
       );
       setConfirmOutOfRange(true);
       setBusy(false);
@@ -147,12 +166,14 @@ export default function Today() {
       !ok
         ? '⚠️ 서버 저장 실패 — 인터넷 연결을 확인해 주세요. 기록은 임시 저장했고, 연결되면 자동으로 전송합니다.'
         : pendingApproval
-        ? `기록됨 — 근무지 반경 밖이라 관리자 승인 후 출근 처리됩니다.${point ? ` (${Math.round(dist)}m)` : ''}`
+        ? fix.ok
+          ? `기록됨 — 근무지 반경 밖이라 관리자 승인 후 출근 처리됩니다. (${Math.round(dist)}m)`
+          : '기록됨 — 정확한 위치를 확인하지 못해 관리자 승인 후 출근 처리됩니다.'
         : kind === 'TRIP'
         ? `✈️ 출장(${TRIP_SEGMENT_LABELS[tripSeg]}) 기록됨 — 관리자 승인 후 그 구간이 근로시간으로 인정됩니다.`
         : point
         ? within
-          ? `✓ ${workplace?.name} 반경 내 확인 (${Math.round(dist)}m)`
+          ? `✓ ${workplace?.name} 반경 내 확인 (${Math.round(dist)}m${accLabel(point)})`
           : `기록됨 (반경 밖 ${Math.round(dist)}m)`
         : '기록됨 (위치 없음)'
     );
@@ -165,22 +186,20 @@ export default function Today() {
   async function doCheckOut() {
     if (busy) return;
     setBusy(true);
-    setGeoMsg('위치 확인 중...');
-    const point = await getCurrentPoint();
-    let within = false;
-    let dist = Infinity;
-    if (point) {
-      const n = nearestWorkplace(point, s.settings.workplaces);
-      within = n.within;
-      dist = n.distance;
-    }
-    const ok = await s.checkOut({ point: point ?? undefined, within });
+    const fix = await measure(false);
+    const point = fix.point;
+    const n = point ? nearestWorkplace(point, s.settings.workplaces) : null;
+    const dist = n?.distance ?? Infinity;
+    const within = fix.ok && !!n?.within;
+    const ok = await s.checkOut({ point, within });
     setGeoMsg(
       !ok
         ? '⚠️ 서버 저장 실패 — 인터넷 연결을 확인해 주세요. 퇴근 기록은 임시 저장했고, 연결되면 자동으로 전송합니다.'
-        : point
-        ? `퇴근 기록됨 (${Math.round(dist)}m)`
-        : '퇴근 기록됨 (위치 없음)'
+        : !point
+        ? '퇴근 기록됨 (위치 없음)'
+        : fix.ok
+        ? `퇴근 기록됨 (${Math.round(dist)}m${accLabel(point)})`
+        : `퇴근 기록됨 — 정확한 위치가 아니라 근무지 확인은 안 됐습니다 (${Math.round(dist)}m${accLabel(point)}).`
     );
     setBusy(false);
   }

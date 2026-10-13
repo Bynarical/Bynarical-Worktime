@@ -47,6 +47,7 @@ const MIGRATIONS = [
   'leave_category.sql',
   'anomaly_review.sql',
   'trip.sql',
+  'workplace_pin_70m.sql',
 ];
 
 const TRACK = 'app_private.sql_migrations';

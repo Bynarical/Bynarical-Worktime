@@ -1,4 +1,5 @@
 // 위치 유틸: 거리 계산, 근무지 반경 판정, 좌표/구글맵 링크 파싱
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { GeoPoint, Workplace } from './types';
 import { supabase } from './supabase';
@@ -52,7 +53,100 @@ export async function getCurrentPoint(): Promise<GeoPoint | null> {
   }
 }
 
-const N = '(-?\\d{1,3}\\.\\d+)';
+// ---- 출퇴근용 정확한 위치 ----
+// 근사 위치(iOS '정확한 위치' 끔 · Android '대략적인 위치' · 브라우저 근사 위치)는 오차가 수 km라
+// 반경 판정에 쓰지 않는다. 실내에서 정확한 위치는 보통 오차 10~65m.
+export const PRECISE_MAX_ACCURACY_M = 100;
+const GOOD_ACCURACY_M = 20; // 이만큼 정확하면 더 기다리지 않는다
+const FIX_WINDOW_MS = 8000; // 첫 위치 이후 더 정확한 위치를 기다리는 시간
+const FIX_TIMEOUT_MS = 20000; // 위치를 하나도 못 받으면 포기
+const STALE_MS = 10000; // 이보다 오래된(캐시된) 위치는 버린다
+
+export type PreciseFix =
+  | { ok: true; point: GeoPoint }
+  // approximate: 근사 위치 권한이거나 오차가 PRECISE_MAX_ACCURACY_M 초과. point는 받은 것 중 가장 정확한 위치.
+  | { ok: false; reason: 'denied' | 'approximate' | 'unavailable'; point?: GeoPoint };
+
+type Watcher = (onFix: (p: GeoPoint, timestamp: number) => void, onDenied: () => void) => Promise<() => void>;
+
+// 웹은 navigator.geolocation을 직접 쓴다 — expo-location 웹 구현은 getCurrentPosition에
+// maximumAge: Infinity(오래된 캐시 위치 허용)를 주고, watchPosition엔 enableHighAccuracy를 넘기지 않는다.
+const webWatch: Watcher = async (onFix, onDenied) => {
+  const geo = typeof navigator !== 'undefined' ? navigator.geolocation : undefined;
+  if (!geo) throw new Error('geolocation unavailable');
+  const id = geo.watchPosition(
+    (pos) => onFix({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }, pos.timestamp),
+    (err) => {
+      if (err.code === err.PERMISSION_DENIED) onDenied();
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: FIX_TIMEOUT_MS }
+  );
+  return () => geo.clearWatch(id);
+};
+
+const nativeWatch: Watcher = async (onFix) => {
+  const sub = await Location.watchPositionAsync(
+    { accuracy: Location.Accuracy.Highest, timeInterval: 1000, distanceInterval: 0 },
+    (loc) =>
+      onFix({ lat: loc.coords.latitude, lng: loc.coords.longitude, accuracy: loc.coords.accuracy ?? undefined }, loc.timestamp)
+  );
+  return () => sub.remove();
+};
+
+// 몇 초간 위치를 받아 가장 정확한 것을 고른다. 첫 위치는 캐시·Wi-Fi 추정이라 부정확한 경우가 많다.
+function bestFix(watch: Watcher): Promise<GeoPoint | 'denied' | null> {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    let best: GeoPoint | null = null;
+    let stop: (() => void) | null = null;
+    let done = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const finish = (r: GeoPoint | 'denied' | null) => {
+      if (done) return;
+      done = true;
+      timers.forEach(clearTimeout);
+      stop?.();
+      resolve(r);
+    };
+    const acc = (p: GeoPoint | null) => p?.accuracy ?? Infinity;
+    timers.push(setTimeout(() => finish(best), FIX_TIMEOUT_MS));
+    watch(
+      (p, timestamp) => {
+        if (done || timestamp < startedAt - STALE_MS) return;
+        if (!best) timers.push(setTimeout(() => finish(best), FIX_WINDOW_MS));
+        if (!best || acc(p) < acc(best)) best = p;
+        if (acc(best) <= GOOD_ACCURACY_M) finish(best);
+      },
+      () => finish('denied')
+    )
+      .then((s) => {
+        stop = s;
+        if (done) s();
+      })
+      .catch(() => finish(best));
+  });
+}
+
+// 출퇴근 반경 판정용 위치. 정확한 위치가 아니면 ok: false.
+export async function getPreciseFix(): Promise<PreciseFix> {
+  try {
+    let approximateGrant = false;
+    if (Platform.OS !== 'web') {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== 'granted') return { ok: false, reason: 'denied' };
+      approximateGrant = perm.android?.accuracy === 'coarse' || perm.ios?.accuracy === 'reduced';
+    }
+    const r = await bestFix(Platform.OS === 'web' ? webWatch : nativeWatch);
+    if (r === 'denied') return { ok: false, reason: 'denied' };
+    if (!r) return { ok: false, reason: 'unavailable' };
+    if (approximateGrant || (r.accuracy ?? Infinity) > PRECISE_MAX_ACCURACY_M) return { ok: false, reason: 'approximate', point: r };
+    return { ok: true, point: r };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+}
+
+const N ='(-?\\d{1,3}\\.\\d+)';
 const SEP = '(?:,|%2C)\\+?\\s*'; // 콤마(또는 %2C) + 선택적 '+' 또는 공백 (구글맵 /search/lat,+lng 대응)
 // 우선순위 순: 정확한 place 좌표(!3d!4d) → 지도중심(@) → search/place/dir 경로 → 쿼리파라미터 → 순수 쌍
 const COORD_PATTERNS = [

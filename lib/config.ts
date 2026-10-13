@@ -93,14 +93,17 @@ export const COLORS = {
   tripMode: '#7c3aed',
 } as const;
 
-// 기본 근무지 (기존 앱과 동일)
+// 근무지 인정 반경 기본값(m). 정확한 위치만 쓰므로 좁게 — 실내 위치 오차(보통 10~65m)를 감안한 값.
+export const DEFAULT_RADIUS_M = 70;
+
+// 기본 근무지. 좌표는 실제 출근 기록이 모이는 지점(2026-10 기준 중앙값) — supabase/workplace_pin_70m.sql과 같은 값
 export const DEFAULT_WORKPLACES: Workplace[] = [
   {
     id: 'wp_default',
     name: '서울창업허브 엠플러스',
-    lat: 37.5613474,
-    lng: 126.8288372,
-    radius: 150,
+    lat: 37.5616433,
+    lng: 126.8288792,
+    radius: DEFAULT_RADIUS_M,
   },
 ];
 
