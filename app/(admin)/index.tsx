@@ -87,12 +87,12 @@ export default function AdminDashboard() {
   const scores = useMemo(() => {
     const emps = Object.entries(s.profilesById)
       .filter(([id, p]) => id !== s.user?.id && isActiveEmployee(p))
-      .map(([id, p]) => ({ id, name: p.name, hireDate: p.hireDate }));
+      .map(([id, p]) => ({ id, name: p.name, hireDate: p.hireDate, resignDate: p.resignDate }));
     return emps
       .map((e) => ({
         id: e.id,
         name: e.name,
-        score: computeAttendanceScore(e.id, scoreYear, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, today, e.hireDate, s.awayLogs),
+        score: computeAttendanceScore(e.id, scoreYear, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, today, e.hireDate, s.awayLogs, e.resignDate),
       }))
       .sort((a, b) => b.score.score - a.score.score || a.name.localeCompare(b.name, 'ko'));
   }, [s.profilesById, s.records, s.leaves, s.settings.workPolicy, s.holidaySet, scoreYear, today, s.user, s.awayLogs]);
@@ -238,6 +238,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
             <Body style={{ fontWeight: '800' }}>{o.name}</Body>
             {o.empNo ? <Muted size={12}>({o.empNo})</Muted> : null}
             {o.isAdmin ? <Badge text="관리자" color={t.primary} /> : null}
+            {o.resignDate ? <Badge text={`퇴사 ${o.resignDate}`} color={t.textFaint} /> : null}
             {o.hasWarning ? <Text style={{ color: t.danger }}>●</Text> : null}
           </Row>
           <Badge text={statusLabel} color={toneColor} soft={meta.tone === 'leave' ? leaveSt.soft : undefined} />
@@ -286,6 +287,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           {!o.isAdmin && (
             <>
               <KV k="입사일" v={o.hireDate || '미등록'} />
+              {o.resignDate ? <KV k="퇴사일 (집계 마지막 날)" v={o.resignDate} /> : null}
               <Divider />
             </>
           )}

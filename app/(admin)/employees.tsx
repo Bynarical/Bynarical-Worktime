@@ -18,6 +18,7 @@ import {
 import { useStore, isActiveEmployee, isEmployeeAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeBalance, hoursToDayLabel } from '@/lib/leave';
+import { addDaysKey, dateKey } from '@/lib/time';
 import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
 import { User } from '@/lib/types';
 
@@ -37,16 +38,55 @@ export default function Employees() {
   // 관리자 수는 전체 프로필 기준(관리자 전용 계정 포함)
   const adminCount = useMemo(() => Object.values(s.profilesById).filter((p) => p.isAdmin).length, [s.profilesById]);
 
-  // 퇴사(아카이브)/삭제
+  // 퇴사(퇴사일 + 아카이브)/복구/삭제
   const [archiveMsg, setArchiveMsg] = useState('');
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [delBusy, setDelBusy] = useState(false);
+  const [resignInput, setResignInput] = useState('');
+  // 퇴사 · 아카이브 목록에서 퇴사일 고치기
+  const [resignEditId, setResignEditId] = useState<string | null>(null);
+  const [resignEditInput, setResignEditInput] = useState('');
+
+  // 퇴사일 검증 — 오류 문구 또는 ''(정상)
+  function resignDateError(v: string, userId: string): string {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || addDaysKey(v, 0) !== v) return '퇴사일(YYYY-MM-DD)을 입력하세요.';
+    const hire = s.profilesById[userId]?.hireDate;
+    if (hire && v < hire) return `퇴사일이 입사일(${hire})보다 빠릅니다.`;
+    return '';
+  }
+  // 마지막 출퇴근 기록일 — 퇴사일 입력 도움
+  const lastRecordDate = (userId: string) =>
+    s.records.filter((r) => r.userId === userId && r.checkIn).reduce<string | null>((m, r) => (!m || r.date > m ? r.date : m), null);
 
   async function doArchive(userId: string, archived: boolean) {
     setArchiveMsg('');
-    await s.adminArchiveEmployee(userId, archived);
+    if (archived) {
+      const err = resignDateError(resignInput, userId);
+      if (err) return setArchiveMsg(err);
+    }
+    const resignDate = archived ? resignInput : s.profilesById[userId]?.resignDate;
+    await s.adminArchiveEmployee(userId, archived, archived ? resignInput : undefined);
     if (adjUser === userId) setAdjUser('');
-    setArchiveMsg(archived ? '✓ 퇴사(아카이브) 처리되었습니다.' : '✓ 복구되었습니다.');
+    setArchiveMsg(
+      archived
+        ? `✓ 퇴사 처리되었습니다. 근태·연차는 퇴사일(${resignDate})까지만 집계합니다.`
+        : `✓ 복구되었습니다.${resignDate ? ` 근태·연차는 계속 퇴사일(${resignDate})까지만 집계합니다.` : ''}`
+    );
+  }
+  async function saveResignEdit(userId: string) {
+    setArchiveMsg('');
+    const err = resignDateError(resignEditInput, userId);
+    if (err) return setArchiveMsg(err);
+    await s.adminUpdateProfile(userId, { resignDate: resignEditInput });
+    setResignEditId(null);
+    setArchiveMsg(`✓ 퇴사일을 ${resignEditInput}(으)로 바꿨습니다.`);
+  }
+  // 퇴사를 취소하고 계속 근무하는 경우 — 퇴사일을 지워 집계를 다시 오늘까지 이어간다.
+  async function clearResign(userId: string) {
+    setArchiveMsg('');
+    await s.adminUpdateProfile(userId, { resignDate: '' });
+    setResignInput('');
+    setArchiveMsg('✓ 퇴사일을 지웠습니다. 오늘까지 계속 근무한 것으로 집계합니다.');
   }
   async function doDelete(userId: string) {
     setArchiveMsg('');
@@ -62,7 +102,7 @@ export default function Employees() {
   const balanceFor = (id: string) => {
     const p = s.profilesById[id];
     if (!p) return null;
-    const u: User = { id, name: p.name, hireDate: p.hireDate, empNo: p.empNo, isAdmin: p.isAdmin, createdAt: '' };
+    const u: User = { id, name: p.name, hireDate: p.hireDate, resignDate: p.resignDate, empNo: p.empNo, isAdmin: p.isAdmin, createdAt: '' };
     return computeBalance(u, s.leaves, s.adjustments, leavePolicy, undefined, {
       records: s.records,
       workPolicy: s.settings.workPolicy,
@@ -107,7 +147,8 @@ export default function Employees() {
     setEditName(s.profilesById[id]?.name || '');
     setEditEmpNo(s.profilesById[id]?.empNo || '');
     setHireInput(s.profilesById[id]?.hireDate || '');
-    setInfoMsg(''); setAdjMsg('');
+    setResignInput(s.profilesById[id]?.resignDate || '');
+    setInfoMsg(''); setAdjMsg(''); setArchiveMsg('');
   }
 
   async function saveInfo() {
@@ -165,7 +206,7 @@ export default function Employees() {
                 )}
               </Row>
               {e.hireDate && b && (
-                <Muted size={11}>발생 {b.entitledHours}h · 사용 {b.usedHours}h · 대기 {b.pendingHours}h{b.adjustmentHours !== 0 ? ` · 조정 ${b.adjustmentHours > 0 ? '+' : ''}${b.adjustmentHours}h` : ''}</Muted>
+                <Muted size={11}>발생 {b.entitledHours}h · 사용 {b.usedHours}h · 대기 {b.pendingHours}h{b.adjustmentHours !== 0 ? ` · 조정 ${b.adjustmentHours > 0 ? '+' : ''}${b.adjustmentHours}h` : ''}{e.resignDate ? ` · 퇴사일 ${e.resignDate} 기준` : ''}</Muted>
               )}
             </View>
           );
@@ -252,13 +293,39 @@ export default function Employees() {
             })()}
             <SpecialLeaveCard userId={adjUser} />
             <Divider />
-            <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flex: 1 }}>
-                <Body style={{ fontWeight: '600' }}>퇴사 처리</Body>
-                <Muted size={12}>아카이브 시 활성 목록에서 제외되고 기록은 보존(증거)됩니다. 복구 가능.</Muted>
-              </View>
-              <Button label="퇴사(아카이브)" variant="warning" small onPress={() => doArchive(adjUser, true)} />
-            </Row>
+            <Body style={{ fontWeight: '600' }}>퇴사 처리</Body>
+            <Muted size={12}>
+              퇴사일(마지막 근무일)을 넣고 퇴사 처리하면 활성 목록에서 빠지고 기록은 보존(증거)됩니다.
+              근태 점수·결근·연차 발생은 <Text style={{ fontWeight: '700' }}>퇴사일까지만</Text> 세며, 나중에 복구해도 그대로입니다.
+            </Muted>
+            {(() => {
+              const cur = s.profilesById[adjUser]?.resignDate;
+              const last = lastRecordDate(adjUser);
+              const today = dateKey();
+              return (
+                <>
+                  {cur ? (
+                    <Card style={{ borderColor: t.warning, borderWidth: 1 }}>
+                      <Muted size={12}>
+                        퇴사 후 복구된 직원입니다 — 퇴사일 <Text style={{ fontWeight: '700' }}>{cur}</Text> 다음 날부터는 집계하지 않습니다.
+                        퇴사를 취소하고 계속 근무하는 경우에만 퇴사일을 지우세요(재입사라면 입사일도 새로 바꾸세요).
+                      </Muted>
+                      <Button label="퇴사일 지우기 (퇴사 취소)" variant="neutral" small onPress={() => clearResign(adjUser)} />
+                    </Card>
+                  ) : null}
+                  <Row style={{ alignItems: 'flex-end' }}>
+                    <View style={{ flex: 1 }}><Field label="퇴사일 (마지막 근무일)" value={resignInput} onChangeText={setResignInput} placeholder="YYYY-MM-DD" autoCapitalize="none" /></View>
+                    <Button label="퇴사 처리" variant="warning" small onPress={() => doArchive(adjUser, true)} />
+                  </Row>
+                  <Row style={{ flexWrap: 'wrap' }}>
+                    <Chip label={`오늘 ${today}`} active={resignInput === today} onPress={() => setResignInput(today)} small />
+                    {last && last !== today ? (
+                      <Chip label={`마지막 출근 ${last}`} active={resignInput === last} onPress={() => setResignInput(last)} small />
+                    ) : null}
+                  </Row>
+                </>
+              );
+            })()}
             <Button label="완전 삭제" variant="danger" small onPress={() => setConfirmDel(adjUser)} />
             {confirmDel === adjUser && (
               <Card style={{ borderColor: t.danger, borderWidth: 1 }}>
@@ -279,18 +346,38 @@ export default function Employees() {
       {/* 퇴사·아카이브 직원 */}
       <Card>
         <Text style={{ fontWeight: '700', color: t.text }}>퇴사 · 아카이브 직원 ({archivedEmployees.length})</Text>
-        <Muted size={12}>활성 목록에서 제외되며 기록은 증거로 보존됩니다. 복구하거나 완전 삭제할 수 있습니다.</Muted>
+        <Muted size={12}>활성 목록에서 제외되며 기록은 증거로 보존됩니다. 복구해도 근태·연차 집계는 퇴사일까지만이며, 완전 삭제할 수도 있습니다.</Muted>
         {archivedEmployees.length === 0 && <Muted size={12}>아카이브된 직원이 없습니다.</Muted>}
         {archivedEmployees.map((e) => (
           <View key={e.id} style={{ gap: 4 }}>
             <Divider />
             <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <Body style={{ fontWeight: '600' }}>{e.name}{e.empNo ? ` (${e.empNo})` : ''}</Body>
+              <View style={{ flexShrink: 1 }}>
+                <Body style={{ fontWeight: '600' }}>{e.name}{e.empNo ? ` (${e.empNo})` : ''}</Body>
+                <Muted size={11} style={e.resignDate ? undefined : { color: t.warning }}>
+                  {e.resignDate ? `퇴사일 ${e.resignDate}` : '퇴사일 미등록 — 복구하면 오늘까지 결근으로 잡힙니다'}
+                </Muted>
+              </View>
               <Row style={{ gap: 6 }}>
+                <Button
+                  label="퇴사일"
+                  variant="neutral"
+                  small
+                  onPress={() => {
+                    setResignEditId(resignEditId === e.id ? null : e.id);
+                    setResignEditInput(e.resignDate || lastRecordDate(e.id) || '');
+                  }}
+                />
                 <Button label="복구" variant="neutral" small onPress={() => doArchive(e.id, false)} />
                 <Button label="삭제" variant="danger" small onPress={() => setConfirmDel(e.id)} />
               </Row>
             </Row>
+            {resignEditId === e.id && (
+              <Row style={{ alignItems: 'flex-end' }}>
+                <View style={{ flex: 1 }}><Field label="퇴사일 (마지막 근무일)" value={resignEditInput} onChangeText={setResignEditInput} placeholder="YYYY-MM-DD" autoCapitalize="none" /></View>
+                <Button label="저장" variant="primary" small onPress={() => saveResignEdit(e.id)} />
+              </Row>
+            )}
             {confirmDel === e.id && (
               <Card style={{ borderColor: t.danger, borderWidth: 1 }}>
                 <Muted size={12} style={{ color: t.danger }}>{e.name}님의 계정과 모든 기록이 영구 삭제됩니다. 되돌릴 수 없습니다.</Muted>

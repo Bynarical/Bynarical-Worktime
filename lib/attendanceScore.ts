@@ -7,6 +7,7 @@
 // 관리자가 승인한 출장(종일/오전/오후)은 그 구간만큼 근로시간으로 인정되어 감점되지 않는다.
 // 진행 중인 당일은 판정 제외.
 // 집계 창은 실제 추적 시작(연초·입사일·첫 기록/연차일 중 가장 늦은 날)부터 → 도입 전 거짓 결근 방지.
+// 끝은 퇴사일(마지막 근무일)까지 → 퇴사 후 복구해도 그 사이가 결근으로 잡히지 않는다.
 import { AttendanceRecord, LeaveRequest, AwayLog, WorkPolicy } from './types';
 import { addDaysKey, weekday, dateKeyToMs } from './time';
 import { computeDay, isNormalWorkday } from './attendance';
@@ -72,14 +73,16 @@ export function computeAttendanceScore(
   holidays: Set<string>,
   today: string,
   hireDate?: string,
-  awayLogs: AwayLog[] = []
+  awayLogs: AwayLog[] = [],
+  resignDate?: string
 ): AttendanceScore {
   const w = SCORE_WEIGHTS;
   const workdaySet = new Set(workPolicy.workdays);
   const yearStart = `${year}-01-01`;
   const yearEndExcl = `${year + 1}-01-01`;
   const tomorrow = addDaysKey(today, 1);
-  const endExcl = yearEndExcl <= tomorrow ? yearEndExcl : tomorrow; // 미래일 제외
+  let endExcl = yearEndExcl <= tomorrow ? yearEndExcl : tomorrow; // 미래일 제외
+  if (resignDate && addDaysKey(resignDate, 1) < endExcl) endExcl = addDaysKey(resignDate, 1); // 퇴사일 다음 날부터 제외
 
   const recByDate = new Map<string, AttendanceRecord>();
   records.filter((r) => r.userId === userId).forEach((r) => recByDate.set(r.date, r));

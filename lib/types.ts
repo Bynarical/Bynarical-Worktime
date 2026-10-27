@@ -20,6 +20,7 @@ export interface User {
   name: string;
   empNo?: string; // 사번(선택)
   hireDate?: string; // 입사일 YYYY-MM-DD (연차 산정)
+  resignDate?: string; // 퇴사일(마지막 근무일) YYYY-MM-DD — 근태·연차 집계는 이 날까지만(복구해도 유지)
   isAdmin?: boolean;
   createdAt: string; // ISO
   passwordHash?: string; // salt+반복 SHA-256 (평문 저장 안 함)

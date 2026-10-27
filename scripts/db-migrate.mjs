@@ -49,6 +49,7 @@ const MIGRATIONS = [
   'trip.sql',
   'workplace_pin_70m.sql',
   'location_accuracy.sql',
+  'resign_date.sql',
 ];
 
 const TRACK = 'app_private.sql_migrations';

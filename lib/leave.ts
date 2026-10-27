@@ -114,6 +114,7 @@ export function computeLeaveYears(
   ctx?: LeaveContext
 ): LeaveYearBucket[] {
   if (!user.hireDate) return [];
+  asOf = capAtResign(user, asOf);
   const hire = user.hireDate;
   const full = policy.fullDayHours;
   const mine = leaves.filter((l) => l.userId === user.id);
@@ -223,6 +224,12 @@ export function computeLeaveYears(
   return out;
 }
 
+// 퇴사자는 퇴사일(마지막 근무일) 시점에서 멈춘다 — 퇴사 뒤엔 연차가 새로 발생·소멸하지 않고,
+// 80% 출근율 판정에도 퇴사 후 날짜가 들어가지 않는다. 복구(아카이브 해제)해도 퇴사일이 있으면 동일.
+function capAtResign(user: User, asOf: string): string {
+  return user.resignDate && asOf > user.resignDate ? user.resignDate : asOf;
+}
+
 // 연차 잔액 — 현재 연차년도(활성 버킷) 기준 + 관리자 조정.
 export function computeBalance(
   user: User,
@@ -232,6 +239,7 @@ export function computeBalance(
   asOf: string = dateKey(),
   ctx?: LeaveContext
 ): LeaveBalance {
+  asOf = capAtResign(user, asOf);
   const buckets = computeLeaveYears(user, leaves, policy, asOf, ctx);
   const active = buckets.find((b) => b.status === 'active') || null;
   const adjustmentHours = sumAdjustments(user.id, adjustments);

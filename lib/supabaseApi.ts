@@ -169,6 +169,7 @@ export async function fetchProfile(userId: string): Promise<User | null> {
     name: data.name,
     empNo: data.emp_no || undefined,
     hireDate: data.hire_date || undefined,
+    resignDate: data.resign_date || undefined,
     isAdmin: !!data.is_admin,
     createdAt: data.created_at,
   };
@@ -178,11 +179,14 @@ export interface ProfileBrief {
   name: string;
   empNo?: string;
   hireDate?: string;
+  resignDate?: string;
   isAdmin?: boolean;
   archived?: boolean;
 }
 export async function fetchProfilesMap(): Promise<Record<string, ProfileBrief>> {
-  const { data } = await sb().from('profiles').select('id,name,emp_no,hire_date,is_admin,archived_at');
+  let { data, error } = await sb().from('profiles').select('id,name,emp_no,hire_date,resign_date,is_admin,archived_at');
+  // supabase/resign_date.sql 적용 전 DB 하위호환 — 퇴사일 없이 다시 읽는다.
+  if (error) ({ data } = await sb().from('profiles').select('id,name,emp_no,hire_date,is_admin,archived_at'));
   const map: Record<string, ProfileBrief> = {};
   (data || []).forEach(
     (p: any) =>
@@ -190,6 +194,7 @@ export async function fetchProfilesMap(): Promise<Record<string, ProfileBrief>> 
         name: p.name,
         empNo: p.emp_no || undefined,
         hireDate: p.hire_date || undefined,
+        resignDate: p.resign_date || undefined,
         isAdmin: !!p.is_admin,
         archived: !!p.archived_at,
       })
@@ -197,12 +202,11 @@ export async function fetchProfilesMap(): Promise<Record<string, ProfileBrief>> 
   return map;
 }
 
-// 직원 아카이브(퇴사) 처리 / 복구
-export async function setProfileArchived(userId: string, archived: boolean) {
-  const { error } = await sb()
-    .from('profiles')
-    .update({ archived_at: archived ? new Date().toISOString() : null })
-    .eq('id', userId);
+// 직원 퇴사 처리(퇴사일 + 아카이브) / 복구(아카이브만 해제 — 퇴사일은 남겨 집계를 퇴사일까지로 묶는다)
+export async function setProfileArchived(userId: string, archived: boolean, resignDate?: string) {
+  const row: Record<string, unknown> = { archived_at: archived ? new Date().toISOString() : null };
+  if (archived) row.resign_date = resignDate || null;
+  const { error } = await sb().from('profiles').update(row).eq('id', userId);
   if (error) throw error;
 }
 
@@ -211,6 +215,7 @@ export async function updateProfileRow(userId: string, patch: Partial<User>) {
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.empNo !== undefined) row.emp_no = patch.empNo || null;
   if (patch.hireDate !== undefined) row.hire_date = patch.hireDate || null;
+  if (patch.resignDate !== undefined) row.resign_date = patch.resignDate || null;
   if (patch.isAdmin !== undefined) row.is_admin = patch.isAdmin;
   const { error } = await sb().from('profiles').update(row).eq('id', userId);
   if (error) throw error;

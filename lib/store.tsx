@@ -74,7 +74,7 @@ interface StoreValue {
   leaves: LeaveRequest[];
   adjustments: LeaveAdjustment[];
   confirmations: Confirmation[];
-  profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean; archived?: boolean }>;
+  profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; resignDate?: string; isAdmin?: boolean; archived?: boolean }>;
   holidays: Holiday[];
   holidaySet: Set<string>;
   meals: MealAllowance[];
@@ -92,8 +92,8 @@ interface StoreValue {
   verifyPassword: (password: string) => Promise<boolean>;
   passwordChanged: boolean; // 초기 비밀번호에서 변경했는지
   updateProfile: (patch: Partial<User>) => Promise<void>;
-  adminUpdateProfile: (userId: string, patch: { name?: string; empNo?: string; hireDate?: string; isAdmin?: boolean }) => Promise<void>;
-  adminArchiveEmployee: (userId: string, archived: boolean) => Promise<void>;
+  adminUpdateProfile: (userId: string, patch: { name?: string; empNo?: string; hireDate?: string; resignDate?: string; isAdmin?: boolean }) => Promise<void>;
+  adminArchiveEmployee: (userId: string, archived: boolean, resignDate?: string) => Promise<void>;
   adminDeleteEmployee: (userId: string) => Promise<{ ok: boolean; error?: string }>;
   refresh: () => Promise<void>;
 
@@ -182,7 +182,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [adjustments, setAdjustments] = useState<LeaveAdjustment[]>([]);
   const [confirmations, setConfirmations] = useState<Confirmation[]>([]);
-  const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean; archived?: boolean }>>({});
+  const [profilesById, setProfilesById] = useState<Record<string, { name: string; empNo?: string; hireDate?: string; resignDate?: string; isAdmin?: boolean; archived?: boolean }>>({});
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [meals, setMeals] = useState<MealAllowance[]>([]);
   const [awayLogs, setAwayLogs] = useState<AwayLog[]>([]);
@@ -383,7 +383,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // 관리자: 다른 직원(또는 본인)의 프로필 수정 (입사일/권한 등). RLS + 트리거가 is_admin 변경을 관리자만 허용.
   const adminUpdateProfile = async (
     userId: string,
-    patch: { name?: string; empNo?: string; hireDate?: string; isAdmin?: boolean }
+    patch: { name?: string; empNo?: string; hireDate?: string; resignDate?: string; isAdmin?: boolean }
   ) => {
     if (supabase) await api.updateProfileRow(userId, patch).catch((e) => console.warn('admin profile', e));
     setProfilesById((prev) => ({
@@ -392,6 +392,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         name: patch.name ?? prev[userId]?.name ?? '',
         empNo: patch.empNo ?? prev[userId]?.empNo,
         hireDate: patch.hireDate ?? prev[userId]?.hireDate,
+        // 퇴사일은 ''로 지울 수 있다(계속 근무·재입사)
+        resignDate: patch.resignDate !== undefined ? patch.resignDate || undefined : prev[userId]?.resignDate,
         isAdmin: patch.isAdmin ?? prev[userId]?.isAdmin,
         archived: prev[userId]?.archived,
       },
@@ -403,10 +405,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 관리자: 직원 아카이브(퇴사) 처리 / 복구 — 데이터는 보존, 활성 목록에서만 제외
-  const adminArchiveEmployee: StoreValue['adminArchiveEmployee'] = async (userId, archived) => {
-    setProfilesById((prev) => ({ ...prev, [userId]: { ...(prev[userId] || { name: '' }), archived } }));
-    if (supabase) await api.setProfileArchived(userId, archived).catch((e) => console.warn('archive', e));
+  // 관리자: 직원 퇴사 처리(퇴사일 지정 + 아카이브) / 복구 — 데이터는 보존, 활성 목록에서만 제외.
+  // 복구는 아카이브만 풀고 퇴사일은 남긴다 → 근태·연차 집계는 계속 퇴사일까지만.
+  const adminArchiveEmployee: StoreValue['adminArchiveEmployee'] = async (userId, archived, resignDate) => {
+    setProfilesById((prev) => {
+      const cur = prev[userId] || { name: '' };
+      return { ...prev, [userId]: { ...cur, archived, resignDate: archived ? resignDate : cur.resignDate } };
+    });
+    if (supabase) await api.setProfileArchived(userId, archived, resignDate).catch((e) => console.warn('archive', e));
   };
   // 관리자: 직원 영구 삭제 (Edge Function → auth 사용자 삭제, 관련 데이터 CASCADE)
   const adminDeleteEmployee: StoreValue['adminDeleteEmployee'] = async (userId) => {

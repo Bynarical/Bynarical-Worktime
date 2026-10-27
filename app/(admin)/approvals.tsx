@@ -125,7 +125,7 @@ export default function Approvals() {
   const yearScore = useMemo(
     () =>
       viewId
-        ? computeAttendanceScore(viewId, curYear, s.records, s.leaves, policy, s.holidaySet, dateKey(), s.profilesById[viewId]?.hireDate, s.awayLogs)
+        ? computeAttendanceScore(viewId, curYear, s.records, s.leaves, policy, s.holidaySet, dateKey(), s.profilesById[viewId]?.hireDate, s.awayLogs, s.profilesById[viewId]?.resignDate)
         : null,
     [viewId, curYear, s.records, s.leaves, policy, s.holidaySet, s.profilesById, s.awayLogs]
   );

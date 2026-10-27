@@ -11,6 +11,7 @@ export interface EmployeeOverview {
   name: string;
   empNo?: string;
   hireDate?: string;
+  resignDate?: string; // 퇴사 후 복구된 직원 — 집계는 이 날까지만
   isAdmin?: boolean;
   balance: LeaveBalance | null; // 입사일 없으면 null
   month: PeriodSummary;
@@ -32,7 +33,7 @@ export interface EmployeeOverview {
 }
 
 export interface OverviewInput {
-  profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; isAdmin?: boolean }>;
+  profilesById: Record<string, { name: string; empNo?: string; hireDate?: string; resignDate?: string; isAdmin?: boolean }>;
   records: AttendanceRecord[];
   leaves: LeaveRequest[];
   adjustments: LeaveAdjustment[];
@@ -98,7 +99,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
 
   const balance = p?.hireDate
     ? computeBalance(
-        { id, name, hireDate: p.hireDate, empNo: p?.empNo, isAdmin: p?.isAdmin, createdAt: '' } as User,
+        { id, name, hireDate: p.hireDate, resignDate: p.resignDate, empNo: p?.empNo, isAdmin: p?.isAdmin, createdAt: '' } as User,
         inp.leaves,
         inp.adjustments,
         inp.leavePolicy,
@@ -129,6 +130,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     name,
     empNo: p?.empNo,
     hireDate: p?.hireDate,
+    resignDate: p?.resignDate,
     isAdmin: p?.isAdmin,
     balance,
     month,
