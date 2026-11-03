@@ -6,9 +6,9 @@ import { useTheme } from '@/lib/theme';
 import { confirmationCovering } from '@/lib/confirmation';
 import { computeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
 import { dateKey, timeHM, hmToMinutes, minutesToHM, ceilToStep } from '@/lib/time';
-import { LEAVE_CATEGORY_ICONS, LEAVE_CATEGORY_NOTES, leaveCategoryLabel } from '@/lib/leave';
+import { LEAVE_CATEGORY_ICONS, LEAVE_CATEGORY_NOTES, leaveCategoryLabel, leaveHoursText } from '@/lib/leave';
 import { leaveStyle } from '@/lib/palette';
-import { AttendanceType, LeaveCategory, LeaveSegment, LeaveUnit, TripSegment, TripStatus } from '@/lib/types';
+import { AttendanceType, LeaveCategory, LeaveSegment, TripSegment, TripStatus } from '@/lib/types';
 
 // 'HH:MM' → 해당 날짜(KST)의 ISO 문자열. 빈값=null(지움), 형식오류=undefined.
 function hmToIso(date: string, hm: string): string | null | undefined {
@@ -30,6 +30,18 @@ function parseHM(hm: string): number | null {
   const mm = parseInt(m[2], 10);
   if (hh > 23 || mm > 59) return null;
   return hh * 60 + mm;
+}
+
+// 관리자 자유 휴가 시간 → 분. "1.5" "1.5h" "1:30" "1시간30분" "40분". 형식 오류면 null.
+function parseDuration(v: string): number | null {
+  const s = v.trim().replace(/\s+/g, '');
+  let m = s.match(/^(\d+):(\d{1,2})$/) || s.match(/^(\d+)시간(\d+)분$/);
+  if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  m = s.match(/^(\d+)분$/);
+  if (m) return parseInt(m[1], 10);
+  m = s.match(/^(\d+(?:\.\d+)?)(?:h|시간)?$/);
+  if (m) return Math.round(parseFloat(m[1]) * 60);
+  return null;
 }
 
 const SEG_LABEL: Record<string, string> = { FULL: '종일', AM: '오전', PM: '오후', CUSTOM: '지정' };
@@ -71,6 +83,10 @@ export function AdminDayEditor({
   // 관리자가 대신 등록할 휴가 종류(연차/유급/무급)
   const [leaveCat, setLeaveCat] = useState<LeaveCategory>('ANNUAL');
   const [leaveReason, setLeaveReason] = useState('');
+  // 관리자 직접 입력 휴가 — 길이(늦게 출근/일찍 퇴근) 또는 중간 시간대
+  const [freeLen, setFreeLen] = useState('');
+  const [freeStart, setFreeStart] = useState('');
+  const [freeEnd, setFreeEnd] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -113,12 +129,38 @@ export function AdminDayEditor({
     onClose();
   }
 
-  async function addLeave(segment: LeaveSegment, hours: LeaveUnit) {
+  async function addLeave(segment: LeaveSegment, hours: number, range?: { startTime: string; endTime: string }) {
     setBusy(true);
-    await s.adminAddLeave(userId, { date, segment, hours, category: leaveCat, reason: leaveReason.trim() || undefined });
+    await s.adminAddLeave(userId, { date, segment, hours, category: leaveCat, reason: leaveReason.trim() || undefined, ...range });
     setBusy(false);
     setLeaveReason('');
-    setMsg(`✓ ${leaveCategoryLabel(leaveCat)}가 등록되었습니다.`);
+    setMsg(`✓ ${leaveCategoryLabel(leaveCat)} ${leaveHoursText(hours, '시간')}이 등록되었습니다.`);
+  }
+
+  // 관리자는 시간 단위 제한 없이 준다 — 오전(늦게 출근)·오후(일찍 퇴근)로 원하는 만큼.
+  async function addFreeLength(segment: 'AM' | 'PM') {
+    setMsg('');
+    const min = parseDuration(freeLen);
+    if (min == null || min <= 0) return setMsg('휴가 시간을 입력하세요 (예: 1.5 · 1:30 · 40분).');
+    if (min > policy.dailyWorkMinutes)
+      return setMsg(`하루 소정근로(${policy.dailyWorkMinutes / 60}시간)보다 길 수 없습니다. 하루 전체면 '종일'을 누르세요.`);
+    await addLeave(segment, min / 60);
+    setFreeLen('');
+  }
+
+  // 중간 시간대(외출형) — 그 사이 자리를 비워도 정상. 점심시간이 걸치면 그만큼은 휴가 시간에서 뺀다.
+  async function addFreeRange() {
+    setMsg('');
+    const sMin = parseHM(freeStart);
+    const eMin = parseHM(freeEnd);
+    if (sMin == null || eMin == null) return setMsg('시간대는 HH:MM 입니다 (예: 14:00 ~ 15:30).');
+    if (eMin <= sMin) return setMsg('종료가 시작보다 늦어야 합니다.');
+    const lunch = Math.max(0, Math.min(eMin, hmToMinutes(policy.breakEnd)) - Math.max(sMin, hmToMinutes(policy.breakStart)));
+    const min = eMin - sMin - lunch;
+    if (min <= 0) return setMsg('점심시간만 걸친 시간대입니다.');
+    await addLeave('CUSTOM', min / 60, { startTime: minutesToHM(sMin), endTime: minutesToHM(eMin) });
+    setFreeStart('');
+    setFreeEnd('');
   }
 
   async function delLeave(id: string) {
@@ -260,7 +302,7 @@ export function AdminDayEditor({
                 dayLeaves.map((l) => (
                   <Row key={l.id} style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <Badge
-                      text={`${LEAVE_CATEGORY_ICONS[l.category ?? 'ANNUAL']} ${leaveCategoryLabel(l.category)} · ${SEG_LABEL[l.segment] || l.segment} ${l.hours}h`}
+                      text={`${LEAVE_CATEGORY_ICONS[l.category ?? 'ANNUAL']} ${leaveCategoryLabel(l.category)} · ${SEG_LABEL[l.segment] || l.segment} ${leaveHoursText(l.hours)}${l.segment === 'CUSTOM' && l.startTime && l.endTime ? ` (${l.startTime}~${l.endTime})` : ''}`}
                       color={leaveStyle(t, l.category).color}
                       soft={leaveStyle(t, l.category).soft}
                     />
@@ -290,7 +332,7 @@ export function AdminDayEditor({
                     label="사유 (선택)"
                     value={leaveReason}
                     onChangeText={setLeaveReason}
-                    placeholder={leaveCat === 'ANNUAL' ? '예: 본인 요청' : leaveCat === 'PAID' ? '예: 예비군' : '예: 개인사정'}
+                    placeholder={leaveCat === 'ANNUAL' ? '예: 본인 요청' : leaveCat === 'PAID' ? '예: 전날 야근 보상 · 예비군' : '예: 개인사정'}
                   />
                   <Row style={{ flexWrap: 'wrap' }}>
                     {([
@@ -299,10 +341,42 @@ export function AdminDayEditor({
                       ['오후 4h', 'PM', 4],
                       ['오전 2h', 'AM', 2],
                       ['오후 2h', 'PM', 2],
-                    ] as [string, LeaveSegment, LeaveUnit][]).map(([label, seg, h]) => (
+                    ] as [string, LeaveSegment, number][]).map(([label, seg, h]) => (
                       <Chip key={label} label={label} color={leaveStyle(t, leaveCat).color} onPress={() => addLeave(seg, h)} small />
                     ))}
                   </Row>
+                  <Text style={{ fontWeight: '700', color: t.textDim, fontSize: 12.5, marginTop: 4 }}>
+                    직접 입력 <Text style={{ fontWeight: '400', color: t.textFaint }}>(시간 제한 없음)</Text>
+                  </Text>
+                  <Field
+                    label="휴가 시간 (예: 1.5 · 1:30 · 40분)"
+                    value={freeLen}
+                    onChangeText={setFreeLen}
+                    placeholder="1.5"
+                    autoCapitalize="none"
+                    keyboardType="numbers-and-punctuation"
+                  />
+                  <Row>
+                    <View style={{ flex: 1 }}>
+                      <Button label="늦게 출근 (오전)" variant="neutral" small loading={busy} onPress={() => addFreeLength('AM')} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Button label="일찍 퇴근 (오후)" variant="neutral" small loading={busy} onPress={() => addFreeLength('PM')} />
+                    </View>
+                  </Row>
+                  <Row style={{ alignItems: 'flex-end' }}>
+                    <View style={{ flex: 1 }}>
+                      <Field label="중간 시작" value={freeStart} onChangeText={setFreeStart} placeholder="14:00" autoCapitalize="none" keyboardType="numbers-and-punctuation" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Field label="중간 종료" value={freeEnd} onChangeText={setFreeEnd} placeholder="15:30" autoCapitalize="none" keyboardType="numbers-and-punctuation" />
+                    </View>
+                    <Button label="그 시간대" variant="neutral" small loading={busy} onPress={addFreeRange} />
+                  </Row>
+                  <Muted size={11}>
+                    늦게 출근 = 출근 허용 시각이 그만큼 늦춰짐 · 일찍 퇴근 = 그만큼 일찍 나가도 정상 · 시간대 = 그 사이 자리를 비워도 정상(점심시간은 빼고 계산).
+                    전날 야근 보상 같은 특별휴가는 '유급휴가'로 주면 연차가 차감되지 않습니다.
+                  </Muted>
                 </>
               )}
 

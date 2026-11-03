@@ -127,7 +127,6 @@ export function AttendanceCalendar({
   const hasTrip = tripCells.length > 0;
   const tripPending = tripCells.filter((c) => c.comp.tripStatus === 'REQUESTED').length;
   const mealCells = cells.filter((c) => c.meal);
-  const mealTotal = mealCells.reduce((sum, c) => sum + (c.meal?.amount || 0), 0);
   // 이번 달에 실제로 나타난 항목만 범례에 표시 (색이 많아 보이는 것 방지)
   const summaryTail = [
     annualDays > 0 ? `연차 ${annualDays}일` : '',
@@ -245,7 +244,7 @@ export function AttendanceCalendar({
           <Row style={{ gap: 4, alignItems: 'center' }}>
             <Text style={{ fontSize: 9 }}>🍚</Text>
             <Text style={{ fontSize: 11, color: t.textDim }}>
-              야근식대 {mealCells.length}일 · {mealTotal.toLocaleString('ko-KR')}원
+              야근식대 {mealCells.length}일
             </Text>
           </Row>
         )}

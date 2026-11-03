@@ -113,7 +113,7 @@ function leaveFromRow(row: any): LeaveRequest {
     id: row.id,
     userId: row.user_id,
     date: row.date,
-    hours: row.hours,
+    hours: Number(row.hours), // numeric 열(관리자 소수 시간) — 문자열로 와도 숫자로
     segment: row.segment,
     category: row.category === 'PAID' ? 'PAID' : row.category === 'UNPAID' ? 'UNPAID' : 'ANNUAL',
     startTime: row.start_time || undefined,

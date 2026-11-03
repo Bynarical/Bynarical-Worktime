@@ -330,7 +330,7 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
           <KV k="미서명 주" v={o.unsignedWeeks > 0 ? `${o.unsignedWeeks}주` : '없음'} />
           <KV
             k="🍚 이번달 야근식대"
-            v={o.mealDays > 0 ? `${o.mealDays}회 · ${o.mealTotal.toLocaleString('ko-KR')}원` : '없음'}
+            v={o.mealDays > 0 ? `${o.mealDays}회` : '없음'}
           />
           {o.mealDays > 0 && <Muted size={11}>쓴 날짜는 승인/근태 탭 달력에서 확인하세요.</Muted>}
           {o.balance && (

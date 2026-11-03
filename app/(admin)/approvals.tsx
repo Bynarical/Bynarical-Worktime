@@ -16,7 +16,7 @@ import {
 import { useStore, isActiveEmployee } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { computeDay, summarize, DayComputation, tripOf, tripCoversWholeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
-import { SEGMENT_LABELS, LEAVE_CATEGORY_ICONS, leaveCategoryLabel } from '@/lib/leave';
+import { SEGMENT_LABELS, LEAVE_CATEGORY_ICONS, leaveCategoryLabel, leaveHoursText } from '@/lib/leave';
 import { labelColor, leaveStyle } from '@/lib/palette';
 import { dateKey, minutesToKor, minutesToHM, timeHM } from '@/lib/time';
 import { shortHash } from '@/lib/hash';
@@ -132,7 +132,7 @@ export default function Approvals() {
   );
 
   function onExport() {
-    const headers = ['날짜', '유형', '출장구간', '출장인정', '출장인정(분)', '계획출근', '출근', '퇴근', '실근로(분)', '인정근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '야근식대(원)', '상태', '해시'];
+    const headers = ['날짜', '유형', '출장구간', '출장인정', '출장인정(분)', '계획출근', '출근', '퇴근', '실근로(분)', '인정근로(분)', '소정(분)', '연차(분)', '유급휴가(분)', '무급휴가(분)', '초과/부족(분)', '야근식대', '상태', '해시'];
     const rows = dayRows.map((r) => [
       r.date,
       r.comp.tripSegment ? '출장' : '근무',
@@ -149,7 +149,7 @@ export default function Approvals() {
       Math.round(r.comp.paidMinutes),
       Math.round(r.comp.unpaidMinutes),
       Math.round(r.comp.diffMinutes),
-      r.meal?.amount ?? '',
+      r.meal ? '사용' : '',
       r.comp.labels.join(' '),
       shortHash(r.rec?.hash),
     ]);
@@ -257,7 +257,7 @@ export default function Approvals() {
                 soft={leaveStyle(t, l.category).soft}
               />
             </Row>
-            <Badge text={`${l.hours}h`} color={leaveStyle(t, l.category).color} />
+            <Badge text={leaveHoursText(l.hours)} color={leaveStyle(t, l.category).color} />
           </Row>
           <Muted size={12}>{SEGMENT_LABELS[l.segment]}{l.segment === 'CUSTOM' && l.startTime ? ` ${l.startTime}~${l.endTime || ''}` : ''}{l.reason ? ` · ${l.reason}` : ''}</Muted>
           {l.category === 'UNPAID' ? (

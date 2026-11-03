@@ -28,6 +28,7 @@ import {
   STATUS_LABELS,
   LEAVE_CATEGORY_ICONS,
   LEAVE_CATEGORY_NOTES,
+  leaveHoursText,
 } from '@/lib/leave';
 import { leaveStyle } from '@/lib/palette';
 import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
@@ -289,7 +290,7 @@ export default function Leave() {
             </Row>
             <StatusBadge status={l.status} />
           </Row>
-          <KV k="구분 / 시간" v={`${SEGMENT_LABELS[l.segment]} · ${l.hours}시간`} />
+          <KV k="구분 / 시간" v={`${SEGMENT_LABELS[l.segment]} · ${leaveHoursText(l.hours, '시간')}`} />
           {l.reason ? <KV k="사유" v={l.reason} /> : null}
           {l.decidedBy ? <Muted size={12}>{STATUS_LABELS[l.status]} · {l.decidedBy}{l.decisionNote ? ` (${l.decisionNote})` : ''}</Muted> : null}
           {l.status === 'REQUESTED' && (
@@ -386,7 +387,7 @@ function AdminApproval() {
         <Card key={l.id}>
           <Row style={{ justifyContent: 'space-between' }}>
             <Body style={{ fontWeight: '700' }}>{l.userName} · {l.date}</Body>
-            <Badge text={`${leaveCategoryLabel(l.category)} ${l.hours}h`} color={leaveStyle(t, l.category).color} soft={leaveStyle(t, l.category).soft} />
+            <Badge text={`${leaveCategoryLabel(l.category)} ${leaveHoursText(l.hours)}`} color={leaveStyle(t, l.category).color} soft={leaveStyle(t, l.category).soft} />
           </Row>
           <Muted size={12}>{SEGMENT_LABELS[l.segment]}{l.reason ? ` · ${l.reason}` : ''}</Muted>
           <Row>

@@ -146,7 +146,8 @@ interface StoreValue {
   cancelLeave: (id: string) => Promise<void>;
   decideLeave: (id: string, approve: boolean, note?: string) => Promise<void>;
   // 관리자 대리 편집(직원 연차)
-  adminAddLeave: (userId: string, req: { date: string; hours: LeaveUnit; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
+  // 관리자는 시간 제한 없음(1.5h, 40분 …) — 직원 신청만 2/4/6/8h 단위
+  adminAddLeave: (userId: string, req: { date: string; hours: number; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
   adminDeleteLeave: (id: string) => Promise<void>;
   // 관리자 기간 등록/취소(휴가·출장) — planPeriod/planPeriodClear 결과를 한 번에 반영. 서버 저장 실패 건수를 돌려준다.
   adminApplyPeriod: (userId: string, kind: PeriodKind, days: PeriodDay[], note?: string) => Promise<{ saved: number; failed: number }>;

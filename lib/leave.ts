@@ -297,16 +297,27 @@ export function validateRequest(
   return { ok: true };
 }
 
-// 잔액 → "N일 M시간" 표기 (8h=1일)
+// 잔액 → "N일 M시간 K분" 표기 (8h=1일). 관리자가 준 소수 시간도 분 단위로 딱 떨어지게.
 export function hoursToDayLabel(hours: number, fullDay = 8): string {
   const neg = hours < 0;
-  const abs = Math.abs(hours);
-  const d = Math.floor(abs / fullDay);
-  const h = abs % fullDay;
+  const total = Math.round(Math.abs(hours) * 60);
+  const d = Math.floor(total / (fullDay * 60));
+  const rest = total - d * fullDay * 60;
+  const h = Math.floor(rest / 60);
+  const m = rest % 60;
   const parts: string[] = [];
   if (d > 0) parts.push(`${d}일`);
-  if (h > 0 || d === 0) parts.push(`${h}시간`);
+  if (h > 0 || (d === 0 && m === 0)) parts.push(`${h}시간`);
+  if (m > 0) parts.push(`${m}분`);
   return (neg ? '-' : '') + parts.join(' ');
+}
+
+// 휴가 한 건의 시간 표기 — 정수면 "4h"(또는 "4시간"), 아니면 "1시간 30분".
+export function leaveHoursText(hours: number, unit: 'h' | '시간' = 'h'): string {
+  const min = Math.round(hours * 60);
+  if (min % 60 === 0) return `${min / 60}${unit}`;
+  const h = Math.floor(min / 60);
+  return h > 0 ? `${h}시간 ${min % 60}분` : `${min}분`;
 }
 
 // 휴가 카테고리 표기 — 화면 문구는 전부 여기서 가져온다.
@@ -322,7 +333,7 @@ export const LEAVE_CATEGORY_ICONS: Record<LeaveCategory, string> = {
 };
 export const LEAVE_CATEGORY_NOTES: Record<LeaveCategory, string> = {
   ANNUAL: '연차: 2시간 단위(2/4/6/8h) 분할 사용, 사용한 시간만큼 잔여에서 차감됩니다.',
-  PAID: '유급휴가(예비군·공가·경조사·병가 등)는 연차 잔여에서 차감되지 않고 급여도 지급됩니다.',
+  PAID: '유급휴가(특별휴가·예비군·공가·경조사·병가 등)는 연차 잔여에서 차감되지 않고 급여도 지급됩니다.',
   UNPAID: '무급휴가는 연차 잔여에서 차감되지 않지만 그 시간만큼 급여가 지급되지 않습니다. 연차 잔여가 없거나 개인 사정으로 더 쉬어야 할 때 사용합니다.',
 };
 

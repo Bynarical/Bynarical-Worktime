@@ -27,7 +27,6 @@ export interface EmployeeOverview {
   unsignedWeeks: number; // 기록이 있으나 서명 안 된 주 수
   anomalyDays: number; // 이번 달 지각/코어위반/부족/미기록 발생 일수 (관리자가 확인한 날은 제외)
   reviewedAnomalyDays: number; // 그중 관리자가 이미 확인 처리한 일수
-  mealTotal: number; // 이번 달 저녁식대 합계(원)
   mealDays: number; // 이번 달 야근식대 먹은 일수
   hasWarning: boolean;
 }
@@ -115,7 +114,6 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
   const monthMeals = (inp.meals || [])
     .filter((m) => m.userId === id && m.date.startsWith(inp.monthPrefix))
     .sort((a, b) => a.date.localeCompare(b.date));
-  const mealTotal = monthMeals.reduce((sum, m) => sum + m.amount, 0);
   const mealDays = monthMeals.length;
 
   // 관리자 계정은 입사일·연차 개념이 없으므로 그와 관련한 경고는 제외한다.
@@ -147,7 +145,6 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
     unsignedWeeks,
     anomalyDays,
     reviewedAnomalyDays,
-    mealTotal,
     mealDays,
     hasWarning,
   };

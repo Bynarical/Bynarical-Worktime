@@ -17,7 +17,7 @@ import {
 } from '@/components/ui';
 import { useStore, isActiveEmployee, isEmployeeAccount } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
-import { computeBalance, hoursToDayLabel } from '@/lib/leave';
+import { computeBalance, hoursToDayLabel, leaveHoursText } from '@/lib/leave';
 import { addDaysKey, dateKey } from '@/lib/time';
 import { LeaveYearBreakdown } from '@/components/LeaveYearBreakdown';
 import { User } from '@/lib/types';
@@ -508,8 +508,8 @@ function SpecialLeaveCard({ userId }: { userId: string }) {
             <Divider />
             <Body style={{ fontWeight: '700' }}>{year}년</Body>
             <Row style={{ gap: 8 }}>
-              <StatTile label="🎖️ 유급휴가" value={hoursToDayLabel(v.paid, fullDay)} sub={`${v.paid}h`} color={t.leavePaid} />
-              <StatTile label="🪫 무급휴가" value={hoursToDayLabel(v.unpaid, fullDay)} sub={`${v.unpaid}h · 급여 제외`} color={t.leaveUnpaid} />
+              <StatTile label="🎖️ 유급휴가" value={hoursToDayLabel(v.paid, fullDay)} sub={leaveHoursText(v.paid)} color={t.leavePaid} />
+              <StatTile label="🪫 무급휴가" value={hoursToDayLabel(v.unpaid, fullDay)} sub={`${leaveHoursText(v.unpaid)} · 급여 제외`} color={t.leaveUnpaid} />
             </Row>
           </View>
         ))

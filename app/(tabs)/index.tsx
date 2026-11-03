@@ -25,7 +25,7 @@ import { HelpManual } from '@/components/HelpManual';
 import { SignReminderPopup } from '@/components/SignReminderPopup';
 import { getPreciseFix, nearestWorkplace, PreciseFix } from '@/lib/geo';
 import { computeDay, workEndMinutes, tripCoversWholeDay, TRIP_SEGMENT_LABELS, TRIP_STATUS_LABELS } from '@/lib/attendance';
-import { LEAVE_CATEGORY_ICONS, leaveCategoryLabel } from '@/lib/leave';
+import { LEAVE_CATEGORY_ICONS, leaveCategoryLabel, leaveHoursText } from '@/lib/leave';
 import { labelColor, leaveStyle } from '@/lib/palette';
 import { ceilToStep, dateKey, minutesOfDay, minutesToHM, minutesToKor, timeHM, hmToMinutes } from '@/lib/time';
 import { GeoPoint, TripSegment, Workplace } from '@/lib/types';
@@ -377,7 +377,7 @@ export default function Today() {
           {todaysLeaves.map((l) => (
             <KV
               key={l.id}
-              k={`${leaveCategoryLabel(l.category)} · ${l.hours}시간 · ${l.segment === 'FULL' ? '종일' : l.segment === 'AM' ? '오전' : l.segment === 'PM' ? '오후' : '지정'}`}
+              k={`${leaveCategoryLabel(l.category)} · ${leaveHoursText(l.hours, '시간')} · ${l.segment === 'FULL' ? '종일' : l.segment === 'AM' ? '오전' : l.segment === 'PM' ? '오후' : '지정'}`}
               v={l.status === 'APPROVED' ? '승인' : '대기'}
               vColor={l.status === 'APPROVED' ? t.success : t.warning}
             />
@@ -460,7 +460,7 @@ export default function Today() {
                 .filter((l) => l.endTime)
                 .map((l) => (
                   <Muted key={l.id} size={11}>
-                    · 외출 {l.startTime}~{l.endTime} · {l.hours}h {l.status === 'APPROVED' ? '(승인)' : l.status === 'REJECTED' ? '(반려)' : '(승인대기)'}
+                    · 외출 {l.startTime}~{l.endTime} · {leaveHoursText(l.hours)} {l.status === 'APPROVED' ? '(승인)' : l.status === 'REJECTED' ? '(반려)' : '(승인대기)'}
                   </Muted>
                 ))}
             </View>

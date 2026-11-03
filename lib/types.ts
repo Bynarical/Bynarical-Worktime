@@ -84,7 +84,7 @@ export interface LeaveRequest {
   userName?: string;
   empNo?: string;
   date: string; // YYYY-MM-DD
-  hours: LeaveUnit; // 차감 시간(2/4/6/8)
+  hours: number; // 휴가 시간 — 직원 신청은 2/4/6/8(LeaveUnit), 관리자 등록은 제한 없음(1.5, 0.5 …)
   segment: LeaveSegment; // FULL=종일, AM=오전(늦게출근), PM=오후(일찍퇴근), CUSTOM=직접지정
   category?: LeaveCategory; // 미지정=ANNUAL(연차). PAID=유급휴가, UNPAID=무급휴가(둘 다 연차 미차감)
   startTime?: string; // 휴가 구간 시작 "HH:MM"

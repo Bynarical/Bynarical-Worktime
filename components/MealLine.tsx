@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text } from 'react-native';
-import { Row } from '@/components/ui';
 import { useTheme } from '@/lib/theme';
 import { minutesToKor } from '@/lib/time';
 import { DayComputation } from '@/lib/attendance';
@@ -22,10 +21,7 @@ export function MealLine({ meal, comp }: { meal: MealAllowance; comp: DayComputa
         gap: 2,
       }}
     >
-      <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: t.text }}>🍚 야근식대</Text>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: t.text }}>{meal.amount.toLocaleString('ko-KR')}원</Text>
-      </Row>
+      <Text style={{ fontSize: 13, fontWeight: '700', color: t.text }}>🍚 야근식대</Text>
       <Text style={{ fontSize: 11, color: odd ? t.warning : t.textDim }}>
         {odd ? '이날 초과근무 없음 — 확인 필요' : `초과근무 ${minutesToKor(overtime)}`}
         {meal.note ? ` · ${meal.note}` : ''}

@@ -51,6 +51,7 @@ const MIGRATIONS = [
   'location_accuracy.sql',
   'resign_date.sql',
   'employee_guard.sql',
+  'leave_hours_numeric.sql',
 ];
 
 const TRACK = 'app_private.sql_migrations';

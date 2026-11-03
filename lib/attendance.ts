@@ -1,6 +1,6 @@
 // 근태 도메인 로직 — 코어타임 근무제(근로계약서 제4조) 반영.
 import { AttendanceRecord, LeaveCategory, LeaveRequest, TripSegment, TripStatus, WorkPolicy } from './types';
-import { LEAVE_CATEGORY_LABELS } from './leave';
+import { LEAVE_CATEGORY_LABELS, leaveHoursText } from './leave';
 import { ceilToStep, hmToMinutes, minutesOfDay, minutesToHM, weekday } from './time';
 
 export interface Interval {
@@ -61,7 +61,7 @@ export function coreOffIntervals(leaves: LeaveRequest[], policy: WorkPolicy): In
   const out: Interval[] = [];
   for (const lv of leaves) {
     if (lv.status !== 'APPROVED') continue;
-    const h = lv.hours * 60;
+    const h = Math.round(lv.hours * 60);
     if (lv.segment === 'FULL') out.push({ s: coreS, e: coreE });
     else if (lv.segment === 'AM') out.push({ s: coreS, e: coreS + h });
     else if (lv.segment === 'PM') out.push({ s: coreE - h, e: coreE });
@@ -184,7 +184,7 @@ export function computeDay(
   let fullLeaveCategory: LeaveCategory | null = null;
   for (const l of leaves) {
     if (l.status !== 'APPROVED') continue;
-    const mins = l.hours * 60;
+    const mins = Math.round(l.hours * 60); // 관리자 소수 시간(1/3h 등)도 분 단위로 딱 떨어지게
     const cat: LeaveCategory = l.category ?? 'ANNUAL';
     leaveMinutes += mins;
     byCategory[cat] += mins;
@@ -289,7 +289,7 @@ export function computeDay(
   } else {
     // 부분 휴가는 종류별로 각각 표기(연차 2h + 무급휴가 4h 같은 조합도 그대로 보이게)
     (['ANNUAL', 'PAID', 'UNPAID'] as LeaveCategory[]).forEach((c) => {
-      if (byCategory[c] > 0) labels.push(`${LEAVE_CATEGORY_LABELS[c]} ${byCategory[c] / 60}h`);
+      if (byCategory[c] > 0) labels.push(`${LEAVE_CATEGORY_LABELS[c]} ${leaveHoursText(byCategory[c] / 60)}`);
     });
   }
   if (flags.late) labels.push('지각');
