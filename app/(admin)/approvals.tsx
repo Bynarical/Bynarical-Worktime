@@ -284,6 +284,9 @@ export default function Approvals() {
             <Chip key={e.id} label={`${e.name}${e.empNo ? ` (${e.empNo})` : ''}`} active={viewId === e.id} onPress={() => { setViewId(e.id); setMonthOffset(0); }} small />
           ))}
         </Row>
+        {viewId ? (
+          <Button label={`👀 ${viewName}님 화면으로 보기 (저장 안 됨)`} variant="outline" small onPress={() => s.startPreview(viewId)} />
+        ) : null}
       </Card>
 
       {viewId && (

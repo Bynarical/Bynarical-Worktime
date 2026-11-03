@@ -10,6 +10,7 @@ import { useTheme } from '@/lib/theme';
 import { PasswordChangePrompt } from '@/components/PasswordChangePrompt';
 import { NoticeBanner } from '@/components/NoticeBanner';
 import { AssurancePopup } from '@/components/AssurancePopup';
+import { PreviewBanner } from '@/components/PreviewBanner';
 
 function Gate() {
   const { ready, authed, user } = useStore();
@@ -26,7 +27,8 @@ function Gate() {
       if (group !== '(auth)') router.replace('/(auth)/login');
       return;
     }
-    // 로그인 상태: 관리자는 전용 콘솔, 일반 직원은 탭 화면으로 고정
+    // 로그인 상태: 관리자는 전용 콘솔, 일반 직원은 탭 화면으로 고정.
+    // 관리자가 '근로자 화면 미리보기' 중이면 user가 그 직원(관리자 아님)이라 탭 화면으로 간다.
     if (isAdmin) {
       if (group !== '(admin)') router.replace('/(admin)');
     } else {
@@ -43,7 +45,12 @@ function Gate() {
   }
   return (
     <>
-      <Slot />
+      <View style={{ flex: 1 }}>
+        <PreviewBanner />
+        <View style={{ flex: 1 }}>
+          <Slot />
+        </View>
+      </View>
       <PasswordChangePrompt />
       <NoticeBanner />
       <AssurancePopup />

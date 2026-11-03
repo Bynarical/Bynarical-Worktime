@@ -222,6 +222,7 @@ export default function AdminDashboard() {
 
 function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded: boolean; onToggle: () => void }) {
   const t = useTheme();
+  const s = useStore();
   const meta = STATUS_META[o.today.status];
   const leaveSt = leaveStyle(t, o.today.leaveCategory);
   const statusLabel = meta.tone === 'leave' ? leaveCategoryLabel(o.today.leaveCategory ?? undefined) : meta.label;
@@ -341,6 +342,9 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
               {o.balance.adjustmentHours !== 0 && <KV k="관리자 조정" v={`${o.balance.adjustmentHours > 0 ? '+' : ''}${o.balance.adjustmentHours}h`} />}
             </>
           )}
+          <Divider />
+          <Button label={`👀 ${o.name}님 화면으로 보기`} variant="outline" small onPress={() => s.startPreview(o.id)} />
+          <Muted size={11}>직원이 보는 화면 그대로 열립니다. 출퇴근·휴가 신청 등을 눌러봐도 저장되지 않습니다.</Muted>
         </>
       )}
     </Card>

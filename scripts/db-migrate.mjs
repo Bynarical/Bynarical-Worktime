@@ -50,6 +50,7 @@ const MIGRATIONS = [
   'workplace_pin_70m.sql',
   'location_accuracy.sql',
   'resign_date.sql',
+  'employee_guard.sql',
 ];
 
 const TRACK = 'app_private.sql_migrations';

@@ -30,7 +30,13 @@ import { confIntegrityHash } from './confirmation';
 import { PeriodKind, PeriodDay, PeriodClearPlan } from './period';
 import { dateKey, ceilTimeToStep, timeHM, hmToMinutes } from './time';
 import { supabase, isSupabaseConfigured, makeTempClient } from './supabase';
-import * as api from './supabaseApi';
+import * as liveApi from './supabaseApi';
+
+// 관리자 '근로자 화면 미리보기'용 — 읽기(fetch*)는 실제로 하고, 쓰기는 전부 아무 일도 하지 않는다.
+// 미리보기에서 누른 출퇴근·휴가 신청·서명 등은 화면(로컬 상태)에만 남고 서버에는 가지 않는다.
+const sandboxApi = Object.fromEntries(
+  Object.entries(liveApi).map(([k, v]) => [k, k.startsWith('fetch') || typeof v !== 'function' ? v : async () => undefined])
+) as unknown as typeof liveApi;
 
 function uid(prefix: string): string {
   return `${prefix}_${new Date().getTime().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -69,7 +75,11 @@ interface StoreValue {
   needsConfig: boolean;
   authed: boolean;
   busy: boolean;
-  user: User | null;
+  user: User | null; // 미리보기 중이면 그 직원(관리자 아님으로 보임)
+  // 관리자 '근로자 화면 미리보기' — 고른 직원의 화면·데이터를 보되 서버에는 아무것도 저장하지 않는다.
+  previewAs: string | null;
+  startPreview: (userId: string) => void;
+  stopPreview: () => Promise<void>;
   settings: Settings;
   records: AttendanceRecord[];
   leaves: LeaveRequest[];
@@ -179,7 +189,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [authUser, setUser] = useState<User | null>(null); // 실제 로그인 사용자
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [unsynced, setUnsynced] = useState<AttendanceRecord[]>([]);
@@ -194,6 +204,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [consents, setConsents] = useState<LocationConsent[]>([]);
   // 초기 비밀번호에서 한 번이라도 변경했는지 (auth user_metadata.password_changed)
   const [passwordChanged, setPasswordChanged] = useState(true);
+
+  // 관리자 '근로자 화면 미리보기' — 고른 직원으로 보이게(user) 하고 서버 쓰기는 막는다(api = sandbox).
+  // 새로고침하면 풀린다(저장하지 않음). 실제 로그인은 authUser 그대로.
+  const [previewAs, setPreviewAs] = useState<string | null>(null);
+  const previewProfile = previewAs && authUser?.isAdmin ? profilesById[previewAs] : undefined;
+  const previewing = !!previewProfile;
+  const user = useMemo<User | null>(
+    () =>
+      previewAs && previewProfile
+        ? {
+            id: previewAs,
+            name: previewProfile.name,
+            empNo: previewProfile.empNo,
+            hireDate: previewProfile.hireDate,
+            resignDate: previewProfile.resignDate,
+            isAdmin: false,
+            createdAt: '',
+          }
+        : authUser,
+    [authUser, previewAs, previewProfile]
+  );
+  const api = previewing ? sandboxApi : liveApi;
 
   const needsConfig = !isSupabaseConfigured;
 
@@ -307,8 +339,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     await setItem(STORAGE_KEYS.LEAVE_ADJUSTMENTS, adjs);
   }
 
+  // 항상 실제 로그인 사용자로 다시 읽는다(loadAll이 user를 그 프로필로 덮어쓰므로 미리보기 대상 id를 넘기면 안 됨).
+  // 미리보기 중이면 로컬에만 남아 있던 연습 기록도 이걸로 사라진다.
   const refresh = async () => {
-    if (supabase && user) await loadAll(user.id).catch(() => {});
+    if (supabase && authUser) await loadAll(authUser.id).catch(() => {});
+  };
+
+  const startPreview = (userId: string) => {
+    if (!authUser?.isAdmin || !profilesById[userId]) return;
+    setPreviewAs(userId);
+  };
+  const stopPreview = async () => {
+    setPreviewAs(null);
+    await refresh();
   };
 
   // ---- auth ----
@@ -350,12 +393,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    setPreviewAs(null);
     if (supabase) await supabase.auth.signOut();
     setAuthed(false);
     setUser(null);
   };
 
   const changePassword = async (newPw: string): Promise<AuthResult> => {
+    if (previewing) return { ok: false, error: '미리보기 중에는 비밀번호를 바꿀 수 없습니다(관리자 계정 비밀번호가 바뀝니다).' };
     if (!supabase) return { ok: false, error: '백엔드 미설정' };
     const { error } = await supabase.auth.updateUser({ password: newPw, data: { password_changed: true } });
     if (error) return { ok: false, error: error.message };
@@ -377,7 +422,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateProfile = async (patch: Partial<User>) => {
-    if (!user) return;
+    if (!user || previewing) return;
     const u = { ...user, ...patch };
     setUser(u);
     await setItem(STORAGE_KEYS.USER, u);
@@ -451,7 +496,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }
   // 미저장 기록 재전송(로드 시 1회 + 대기열 있으면 주기적으로). 성공분만 큐에서 제거.
   async function resyncRecords() {
-    if (!supabase || !user) return;
+    if (!supabase || !user || previewing) return;
     const q = (await getItem<AttendanceRecord[]>(STORAGE_KEYS.UNSYNCED_RECORDS)) || [];
     if (!q.length) return;
     const remaining: AttendanceRecord[] = [];
@@ -1012,6 +1057,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // 위치정보 수집·이용 동의 기록 (IP는 Edge Function이 서버에서 캡처)
   const recordConsent = async () => {
+    if (previewing && user) {
+      setConsents((prev) => [...prev.filter((c) => c.userId !== user.id), { userId: user.id, agreedAt: new Date().toISOString(), version: CONSENT_VERSION }]);
+      return { ok: true };
+    }
     if (!supabase || !user) return { ok: false, error: '백엔드가 설정되지 않았습니다.' };
     const { data, error } = await supabase.functions.invoke('record-consent', { body: { version: CONSENT_VERSION } });
     if (error) return { ok: false, error: '동의 기록 함수를 호출하지 못했습니다. (Edge Function 배포 확인)' };
@@ -1076,6 +1125,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       authed,
       busy,
       user,
+      previewAs: previewing ? previewAs : null,
+      startPreview,
+      stopPreview,
       settings,
       records,
       unsynced,
@@ -1140,7 +1192,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateLeavePolicy,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, needsConfig, authed, busy, user, settings, records, unsynced, leaves, adjustments, confirmations, profilesById, holidays, meals, awayLogs, anomalyReviews, consents, passwordChanged]
+    [ready, needsConfig, authed, busy, user, authUser, previewAs, settings, records, unsynced, leaves, adjustments, confirmations, profilesById, holidays, meals, awayLogs, anomalyReviews, consents, passwordChanged]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
