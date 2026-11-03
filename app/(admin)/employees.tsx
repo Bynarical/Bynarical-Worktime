@@ -41,7 +41,7 @@ export default function Employees() {
   // 퇴사(퇴사일 + 아카이브)/복구/삭제
   const [archiveMsg, setArchiveMsg] = useState('');
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
-  const [delBusy, setDelBusy] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState<string | null>(null);
   const [resignInput, setResignInput] = useState('');
   // 퇴사 · 아카이브 목록에서 퇴사일 고치기
   const [resignEditId, setResignEditId] = useState<string | null>(null);
@@ -58,6 +58,19 @@ export default function Employees() {
   const lastRecordDate = (userId: string) =>
     s.records.filter((r) => r.userId === userId && r.checkIn).reduce<string | null>((m, r) => (!m || r.date > m ? r.date : m), null);
 
+  // 퇴사 처리는 퇴사일을 먼저 검증한 뒤 비밀번호 확인 단계로 넘어간다.
+  function askArchive(userId: string) {
+    setArchiveMsg('');
+    const err = resignDateError(resignInput, userId);
+    if (err) return setArchiveMsg(err);
+    setConfirmDel(null);
+    setConfirmArchive(userId);
+  }
+  function askDelete(userId: string) {
+    setArchiveMsg('');
+    setConfirmArchive(null);
+    setConfirmDel(userId);
+  }
   async function doArchive(userId: string, archived: boolean) {
     setArchiveMsg('');
     if (archived) {
@@ -66,6 +79,7 @@ export default function Employees() {
     }
     const resignDate = archived ? resignInput : s.profilesById[userId]?.resignDate;
     await s.adminArchiveEmployee(userId, archived, archived ? resignInput : undefined);
+    setConfirmArchive(null);
     if (adjUser === userId) setAdjUser('');
     setArchiveMsg(
       archived
@@ -90,9 +104,7 @@ export default function Employees() {
   }
   async function doDelete(userId: string) {
     setArchiveMsg('');
-    setDelBusy(true);
     const r = await s.adminDeleteEmployee(userId);
-    setDelBusy(false);
     setConfirmDel(null);
     if (!r.ok) return setArchiveMsg(r.error || '삭제 실패');
     if (adjUser === userId) setAdjUser('');
@@ -315,7 +327,7 @@ export default function Employees() {
                   ) : null}
                   <Row style={{ alignItems: 'flex-end' }}>
                     <View style={{ flex: 1 }}><Field label="퇴사일 (마지막 근무일)" value={resignInput} onChangeText={setResignInput} placeholder="YYYY-MM-DD" autoCapitalize="none" /></View>
-                    <Button label="퇴사 처리" variant="warning" small onPress={() => doArchive(adjUser, true)} />
+                    <Button label="퇴사 처리" variant="warning" small onPress={() => askArchive(adjUser)} />
                   </Row>
                   <Row style={{ flexWrap: 'wrap' }}>
                     <Chip label={`오늘 ${today}`} active={resignInput === today} onPress={() => setResignInput(today)} small />
@@ -323,18 +335,27 @@ export default function Employees() {
                       <Chip label={`마지막 출근 ${last}`} active={resignInput === last} onPress={() => setResignInput(last)} small />
                     ) : null}
                   </Row>
+                  {confirmArchive === adjUser && (
+                    <PasswordGate
+                      warning={`${s.profilesById[adjUser]?.name || ''}님을 퇴사일 ${resignInput}로 퇴사 처리합니다. 활성 목록에서 빠지고 기록은 보존됩니다.`}
+                      confirmLabel="퇴사 처리"
+                      variant="warning"
+                      onConfirm={() => doArchive(adjUser, true)}
+                      onCancel={() => setConfirmArchive(null)}
+                    />
+                  )}
                 </>
               );
             })()}
-            <Button label="완전 삭제" variant="danger" small onPress={() => setConfirmDel(adjUser)} />
+            <Button label="완전 삭제" variant="danger" small onPress={() => askDelete(adjUser)} />
             {confirmDel === adjUser && (
-              <Card style={{ borderColor: t.danger, borderWidth: 1 }}>
-                <Muted size={12} style={{ color: t.danger }}>계정과 모든 근태·연차 기록이 영구 삭제됩니다. 되돌릴 수 없습니다. 보존이 필요하면 '퇴사(아카이브)'를 쓰세요.</Muted>
-                <Row>
-                  <Button label="영구 삭제" variant="danger" small style={{ flex: 1 }} loading={delBusy} onPress={() => doDelete(adjUser)} />
-                  <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => setConfirmDel(null)} />
-                </Row>
-              </Card>
+              <PasswordGate
+                warning="계정과 모든 근태·연차 기록이 영구 삭제됩니다. 되돌릴 수 없습니다. 보존이 필요하면 '퇴사(아카이브)'를 쓰세요."
+                confirmLabel="영구 삭제"
+                variant="danger"
+                onConfirm={() => doDelete(adjUser)}
+                onCancel={() => setConfirmDel(null)}
+              />
             )}
             {archiveMsg ? <Muted size={12} style={{ color: archiveMsg.startsWith('✓') ? t.success : t.danger }}>{archiveMsg}</Muted> : null}
           </>
@@ -369,7 +390,7 @@ export default function Employees() {
                   }}
                 />
                 <Button label="복구" variant="neutral" small onPress={() => doArchive(e.id, false)} />
-                <Button label="삭제" variant="danger" small onPress={() => setConfirmDel(e.id)} />
+                <Button label="삭제" variant="danger" small onPress={() => askDelete(e.id)} />
               </Row>
             </Row>
             {resignEditId === e.id && (
@@ -379,19 +400,80 @@ export default function Employees() {
               </Row>
             )}
             {confirmDel === e.id && (
-              <Card style={{ borderColor: t.danger, borderWidth: 1 }}>
-                <Muted size={12} style={{ color: t.danger }}>{e.name}님의 계정과 모든 기록이 영구 삭제됩니다. 되돌릴 수 없습니다.</Muted>
-                <Row>
-                  <Button label="영구 삭제" variant="danger" small style={{ flex: 1 }} loading={delBusy} onPress={() => doDelete(e.id)} />
-                  <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={() => setConfirmDel(null)} />
-                </Row>
-              </Card>
+              <PasswordGate
+                warning={`${e.name}님의 계정과 모든 기록이 영구 삭제됩니다. 되돌릴 수 없습니다.`}
+                confirmLabel="영구 삭제"
+                variant="danger"
+                onConfirm={() => doDelete(e.id)}
+                onCancel={() => setConfirmDel(null)}
+              />
             )}
           </View>
         ))}
         {archiveMsg ? <Muted size={12} style={{ color: archiveMsg.startsWith('✓') ? t.success : t.danger }}>{archiveMsg}</Muted> : null}
       </Card>
     </Screen>
+  );
+}
+
+// 퇴사(아카이브)·영구 삭제는 관리자 로그인 비밀번호를 다시 넣어야 실행된다 —
+// 관리자 화면이 열린 채 자리를 비운 사이 다른 사람이 처리하지 못하게.
+function PasswordGate({
+  warning,
+  confirmLabel,
+  variant,
+  onConfirm,
+  onCancel,
+}: {
+  warning: string;
+  confirmLabel: string;
+  variant: 'warning' | 'danger';
+  onConfirm: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const s = useStore();
+  const t = useTheme();
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const color = variant === 'danger' ? t.danger : t.warning;
+
+  async function go() {
+    if (busy) return;
+    if (!pw) return setErr('비밀번호를 입력하세요.');
+    setErr('');
+    setBusy(true);
+    const ok = await s.verifyPassword(pw);
+    if (!ok) {
+      setBusy(false);
+      setPw('');
+      return setErr('비밀번호가 맞지 않습니다.');
+    }
+    await onConfirm();
+    setBusy(false);
+  }
+
+  return (
+    <Card style={{ borderColor: color, borderWidth: 1 }}>
+      <Muted size={12} style={{ color }}>{warning}</Muted>
+      <Field
+        label="본인 확인 — 관리자 로그인 비밀번호"
+        value={pw}
+        onChangeText={(v) => {
+          setPw(v);
+          setErr('');
+        }}
+        secureTextEntry
+        autoCapitalize="none"
+        placeholder="비밀번호"
+        onSubmitEditing={go}
+      />
+      {err ? <Muted size={12} style={{ color: t.danger }}>{err}</Muted> : null}
+      <Row>
+        <Button label={confirmLabel} variant={variant} small style={{ flex: 1 }} loading={busy} disabled={!pw} onPress={go} />
+        <Button label="취소" variant="neutral" small style={{ flex: 1 }} onPress={onCancel} />
+      </Row>
+    </Card>
   );
 }
 
