@@ -27,6 +27,7 @@ import { nearestWorkplace, PRECISE_MAX_ACCURACY_M } from '@/lib/geo';
 import { AttendanceCalendar } from '@/components/AttendanceCalendar';
 import { MealLine } from '@/components/MealLine';
 import { AdminDayEditor } from '@/components/AdminDayEditor';
+import { AdminPeriodEditor } from '@/components/AdminPeriodEditor';
 import { computeAttendanceScore } from '@/lib/attendanceScore';
 import { AttendanceScoreCard } from '@/components/AttendanceScoreCard';
 
@@ -344,6 +345,8 @@ export default function Approvals() {
           </Hero>
 
           {yearScore && <AttendanceScoreCard name={viewName} score={yearScore} />}
+
+          <AdminPeriodEditor key={viewId} userId={viewId} userName={viewName} />
 
           <Row style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
             <Text style={{ fontWeight: '700', color: t.text }}>일별 기록</Text>

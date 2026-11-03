@@ -27,6 +27,7 @@ import {
 } from './types';
 import { chainHash } from './hash';
 import { confIntegrityHash } from './confirmation';
+import { PeriodKind, PeriodDay, PeriodClearPlan } from './period';
 import { dateKey, ceilTimeToStep, timeHM, hmToMinutes } from './time';
 import { supabase, isSupabaseConfigured, makeTempClient } from './supabase';
 import * as api from './supabaseApi';
@@ -137,6 +138,9 @@ interface StoreValue {
   // 관리자 대리 편집(직원 연차)
   adminAddLeave: (userId: string, req: { date: string; hours: LeaveUnit; segment: LeaveSegment; category?: LeaveCategory; startTime?: string; endTime?: string; reason?: string }) => Promise<void>;
   adminDeleteLeave: (id: string) => Promise<void>;
+  // 관리자 기간 등록/취소(휴가·출장) — planPeriod/planPeriodClear 결과를 한 번에 반영. 서버 저장 실패 건수를 돌려준다.
+  adminApplyPeriod: (userId: string, kind: PeriodKind, days: PeriodDay[], note?: string) => Promise<{ saved: number; failed: number }>;
+  adminClearPeriod: (userId: string, plan: PeriodClearPlan) => Promise<{ saved: number; failed: number }>;
   // 근무 중 실시간 외출(중간 연차) — 시작/복귀/취소
   startOuting: () => Promise<void>;
   endOuting: () => Promise<void>;
@@ -670,6 +674,144 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (supabase) await api.deleteLeave(id).catch((e) => console.warn('admin del leave', e));
   };
 
+  // 관리자 기간 등록: 근무일마다 종일 휴가(즉시 승인) 또는 종일 출장(인정)을 넣는다.
+  // 한 번에 여러 건이라 해시 체인을 이어 붙이고, 서버 저장에 실패한 건은 화면에서도 되돌린다.
+  const adminApplyPeriod: StoreValue['adminApplyPeriod'] = async (targetUserId, kind, days, note) => {
+    const targetName = profilesById[targetUserId]?.name;
+    const by = user?.name;
+    const nowIso = new Date().toISOString();
+    const todo = days.filter((d) => !d.skip);
+    let failed = 0;
+    if (kind === 'TRIP') {
+      const ids = new Set(todo.map((d) => d.record?.id).filter(Boolean));
+      let prev = lastHash(records.filter((r) => r.userId === targetUserId && !ids.has(r.id)));
+      const made = todo.map((d, i) => {
+        const base = d.record;
+        const rec: AttendanceRecord = {
+          ...base,
+          id: base?.id || `${uid('rec')}_${i}`,
+          userId: targetUserId,
+          userName: targetName,
+          date: d.date,
+          type: 'TRIP',
+          tripSegment: 'FULL',
+          tripStatus: 'APPROVED',
+          tripNote: note || base?.tripNote,
+          tripDecidedBy: by,
+          tripDecidedAt: nowIso,
+          pending: false,
+          note: base?.note ?? '관리자 기간 등록',
+          updatedAt: nowIso,
+        };
+        rec.prevHash = prev;
+        rec.hash = chainHash(prev, rec as any);
+        prev = rec.hash;
+        return rec;
+      });
+      const madeIds = new Set(made.map((r) => r.id));
+      setRecords((p) => [...p.filter((r) => !madeIds.has(r.id)), ...made]);
+      if (supabase) {
+        const bad: string[] = [];
+        for (const rec of made) {
+          try {
+            await api.upsertRecord(rec, targetUserId);
+          } catch (e) {
+            console.warn('period trip', e);
+            bad.push(rec.id);
+          }
+        }
+        failed = bad.length;
+        if (bad.length) {
+          // 실패한 날은 원래 기록(없었으면 없음)으로 되돌린다.
+          const originals = todo.map((d) => d.record).filter((r): r is AttendanceRecord => !!r && bad.includes(r.id));
+          setRecords((p) => [...p.filter((r) => !bad.includes(r.id)), ...originals]);
+        }
+      }
+      return { saved: made.length - failed, failed };
+    }
+
+    let prev = lastHash(leaves.filter((l) => l.userId === targetUserId));
+    const made = todo.map((d, i) => {
+      const lv: LeaveRequest = {
+        id: `${uid('lv')}_${i}`,
+        userId: targetUserId,
+        userName: targetName,
+        date: d.date,
+        hours: 8,
+        segment: 'FULL',
+        category: kind,
+        reason: note || '관리자 기간 등록',
+        status: 'APPROVED',
+        requestedAt: nowIso,
+        decidedAt: nowIso,
+        decidedBy: by,
+      };
+      lv.prevHash = prev;
+      lv.hash = chainHash(prev, lv as any);
+      prev = lv.hash;
+      return lv;
+    });
+    setLeaves((p) => [...p, ...made]);
+    if (supabase) {
+      const bad: string[] = [];
+      for (const lv of made) {
+        try {
+          await api.upsertLeave(lv, targetUserId);
+        } catch (e) {
+          console.warn('period leave', e);
+          bad.push(lv.id);
+        }
+      }
+      failed = bad.length;
+      if (bad.length) setLeaves((p) => p.filter((l) => !bad.includes(l.id)));
+    }
+    return { saved: made.length - failed, failed };
+  };
+
+  // 관리자 기간 취소: 종일 휴가 삭제 / 출근 기록 없는 출장 삭제 / 출근 기록 있는 출장은 근무로 되돌림.
+  const adminClearPeriod: StoreValue['adminClearPeriod'] = async (targetUserId, plan) => {
+    const nowIso = new Date().toISOString();
+    const reverted = plan.tripReverts.map((r) => {
+      const rec: AttendanceRecord = {
+        ...r,
+        type: 'WORK',
+        tripSegment: undefined,
+        tripStatus: undefined,
+        tripNote: undefined,
+        tripDecidedBy: undefined,
+        tripDecidedAt: undefined,
+        updatedAt: nowIso,
+      };
+      return rec;
+    });
+    let prev = lastHash(records.filter((r) => r.userId === targetUserId && !plan.tripReverts.some((x) => x.id === r.id)));
+    reverted.forEach((rec) => {
+      rec.prevHash = prev;
+      rec.hash = chainHash(prev, rec as any);
+      prev = rec.hash;
+    });
+    const total = plan.leaveIds.length + plan.tripDeletes.length + reverted.length;
+    const gone = new Set([...plan.tripDeletes, ...reverted.map((r) => r.id)]);
+    setRecords((p) => [...p.filter((r) => !gone.has(r.id)), ...reverted]);
+    setLeaves((p) => p.filter((l) => !plan.leaveIds.includes(l.id)));
+    if (!supabase) return { saved: total, failed: 0 };
+    let failed = 0;
+    const attempt = async (fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (e) {
+        console.warn('period clear', e);
+        failed += 1;
+      }
+    };
+    for (const id of plan.leaveIds) await attempt(() => api.deleteLeave(id));
+    for (const id of plan.tripDeletes) await attempt(() => api.adminDeleteRecord(id));
+    for (const rec of reverted) await attempt(() => api.upsertRecord(rec, targetUserId));
+    // 일부라도 실패하면 서버 상태를 다시 읽어 화면을 맞춘다.
+    if (failed && user) await loadAll(user.id).catch(() => {});
+    return { saved: total - failed, failed };
+  };
+
   // 근무 중 외출(중간 연차): 진행 중인 외출 = 오늘자 CUSTOM·종료없음·승인대기
   const openOuting = () => {
     const d = dateKey();
@@ -972,6 +1114,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       decideLeave,
       adminAddLeave,
       adminDeleteLeave,
+      adminApplyPeriod,
+      adminClearPeriod,
       startOuting,
       endOuting,
       cancelOuting,

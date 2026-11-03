@@ -2,7 +2,8 @@
 // 소정근로일 = [start, end) 구간에서 근무요일(workPolicy.workdays)이면서 공휴일(holidays)이 아닌 날.
 //   단, 종일 무급휴가일은 소정근로일에서 제외한다(개인 사정 무급휴직 기간은 소정근로일수에서
 //   빼고 남은 소정근로일의 출근율로 판단 — 고용노동부 행정해석).
-// 출근 인정일 = 소정근로일 중 근태기록(check_in 있음) 또는 승인 휴가가 있는 날(휴가 사용일은 출근 간주).
+// 출근 인정일 = 소정근로일 중 근태기록(check_in 있음)·관리자 승인 출장 또는 승인 휴가가 있는 날(휴가 사용일은 출근 간주).
+//   출장은 근무이므로 출근 기록 없이 관리자가 사후 등록·승인한 출장일도 출근으로 본다.
 import { AttendanceRecord, LeaveRequest, WorkPolicy } from './types';
 import { weekday, dateKeyToMs, addDaysKey, addMonthsKey } from './time';
 
@@ -36,7 +37,11 @@ export function attendanceStat(
   const workdaySet = new Set(workPolicy.workdays);
   const fullDayHours = (workPolicy.dailyWorkMinutes || 480) / 60;
   const mine = leaves.filter((l) => l.userId === userId && l.status === 'APPROVED');
-  const recDates = new Set(records.filter((r) => r.userId === userId && r.checkIn).map((r) => r.date));
+  const recDates = new Set(
+    records
+      .filter((r) => r.userId === userId && (r.checkIn || (r.type === 'TRIP' && r.tripStatus === 'APPROVED')))
+      .map((r) => r.date)
+  );
   const leaveDates = new Set(mine.map((l) => l.date));
   // 종일 무급휴가 = 소정근로일 자체에서 제외(출근율 분모에 넣지 않음)
   const unpaidFullDates = new Set(

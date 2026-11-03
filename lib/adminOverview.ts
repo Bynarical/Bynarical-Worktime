@@ -4,7 +4,7 @@ import { computeDay, summarize, tripOf, PeriodSummary } from './attendance';
 import { computeBalance, LeaveBalance } from './leave';
 import { weekStartKey } from './time';
 
-export type TodayStatus = 'WORKING' | 'DONE' | 'LEAVE' | 'ABSENT';
+export type TodayStatus = 'WORKING' | 'DONE' | 'LEAVE' | 'TRIP' | 'ABSENT';
 
 export interface EmployeeOverview {
   id: string;
@@ -83,6 +83,7 @@ export function buildEmployeeOverview(id: string, inp: OverviewInput): EmployeeO
   if (todayRec?.checkIn && !todayRec?.checkOut) status = 'WORKING';
   else if (todayRec?.checkIn && todayRec?.checkOut) status = 'DONE';
   else if (isFullLeave) status = 'LEAVE';
+  else if (tripOf(todayRec)) status = 'TRIP'; // 출근 기록 없이 관리자가 등록한 출장
   else status = 'ABSENT';
 
   // 미서명 주 (기록이 있는 지난 주 중 확인 서명이 없는 주).

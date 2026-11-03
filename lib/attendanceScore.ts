@@ -5,12 +5,15 @@
 // 지각한 날의 코어 시작 미충족은 지각으로 갈음. 하루 감점은 무단결근을 넘지 않는다.
 // 연차·유급휴가는 정상으로 간주. 종일 무급휴가는 소정근로일 자체에서 제외(감점·출근율 영향 없음).
 // 관리자가 승인한 출장(종일/오전/오후)은 그 구간만큼 근로시간으로 인정되어 감점되지 않는다.
+// 출근 기록 없이 관리자가 사후 등록한 승인 출장도 마찬가지(결근 아님). 휴가·출장이 덮지 못한 나머지만 근로부족.
+// 지각·부족·초과는 30분 단위 출근제(적용 출근)가 아니라 실제 출퇴근 시각(분)으로 센다
+// → 8:45 출근과 8:57 출근은 같은 9:00 적용이어도 점수가 다르다. 점수는 소수 첫째 자리까지.
 // 진행 중인 당일은 판정 제외.
 // 집계 창은 실제 추적 시작(연초·입사일·첫 기록/연차일 중 가장 늦은 날)부터 → 도입 전 거짓 결근 방지.
 // 끝은 퇴사일(마지막 근무일)까지 → 퇴사 후 복구해도 그 사이가 결근으로 잡히지 않는다.
 import { AttendanceRecord, LeaveRequest, AwayLog, WorkPolicy } from './types';
 import { addDaysKey, weekday, dateKeyToMs } from './time';
-import { computeDay, isNormalWorkday } from './attendance';
+import { computeDay } from './attendance';
 
 export const SCORE_WEIGHTS = {
   // 시간 비례 감점(시간당 점수) — analog
@@ -31,7 +34,7 @@ export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
 
 export interface AttendanceScore {
   year: number;
-  score: number; // 최종 점수(정수, 0~115). 100=정시·성실, 100 초과=초과근무 가점
+  score: number; // 최종 점수(소수 첫째 자리, 0~125). 100=정시·성실, 100 초과=초과근무 가점
   rawScore: number; // 반올림 전
   grade: Grade;
   scheduledDays: number;
@@ -142,34 +145,58 @@ export function computeAttendanceScore(
     }
 
     scheduledDays += 1;
-    if (rec?.checkIn || dayLeaves.length) attended += 1;
+    const tripCovered = comp.tripCoverMinutes > 0; // 승인 출장 — 출근 기록이 없어도 출근으로 본다
+    if (rec?.checkIn || dayLeaves.length || tripCovered) attended += 1;
 
     if (comp.isFullLeave) {
       leaveDays += 1;
       continue;
     }
-    if (!rec?.checkIn) {
-      if (cur < today && dayLeaves.length === 0) absentDays += 1;
+    // 진행 중인 당일은 판정하지 않는다(지난 날만).
+    const closed = cur < today;
+    // 출근 기록도, 휴가도, 승인 출장도 없는 지난 근무일 = 무단결근.
+    if (closed && !rec?.checkIn && dayLeaves.length === 0 && !tripCovered) {
+      absentDays += 1;
       continue;
     }
-    workedDays += 1;
     let dayLateMin = 0;
     let dayShortMin = 0;
     let dayCore = false;
-    if (comp.flags.late) {
-      lateCount += 1;
-      dayLateMin = comp.lateMinutes;
-    }
-    // 지각한 날의 코어 시작 미충족은 지각으로 이미 감점 → 코어 종료 전에 퇴근했을 때만 따로 센다.
-    if (comp.flags.coreViolation && (!comp.flags.late || comp.coreEndMissed)) {
-      coreViolationCount += 1;
-      dayCore = true;
-    }
-    // 조기퇴근은 그만큼 근로부족으로 잡히므로 따로 감점하지 않는다.
-    if (comp.flags.insufficient) {
-      shortfallDays += 1;
-      // 승인된 출장 인정분(comp.recognizedMinutes)을 반영한 뒤 남은 부족분만 감점한다.
-      dayShortMin = Math.max(0, comp.requiredMinutes - comp.recognizedMinutes);
+    if (!rec?.checkIn) {
+      if (!closed) continue;
+      if (tripCovered) workedDays += 1;
+      // 휴가·승인 출장이 덮지 못한 소정근로 = 근로부족, 그 시간대 코어타임도 비었다.
+      dayShortMin = Math.max(0, comp.requiredMinutes - comp.tripCoverMinutes);
+      if (dayShortMin > 0) {
+        shortfallDays += 1;
+        coreViolationCount += 1;
+        dayCore = true;
+      } else {
+        normalDays += 1;
+      }
+    } else {
+      workedDays += 1;
+      dayLateMin = comp.actualLateMinutes;
+      if (dayLateMin > 0) lateCount += 1;
+      // 지각한 날의 코어 시작 미충족은 지각으로 이미 감점 → 코어 종료 전에 퇴근했을 때만 따로 센다.
+      if (comp.flags.coreViolation && (dayLateMin === 0 || comp.coreEndMissed)) {
+        coreViolationCount += 1;
+        dayCore = true;
+      }
+      // 조기퇴근은 그만큼 근로부족으로 잡히므로 따로 감점하지 않는다.
+      // 실제 출퇴근 시각으로 센 근로 + 승인 출장 인정분을 그날 소정근로와 비교한다.
+      if (closed && comp.hasCheckOut) {
+        const diff = comp.actualRecognizedMinutes - comp.requiredMinutes;
+        if (diff < -0.01) {
+          shortfallDays += 1;
+          dayShortMin = -diff;
+        } else if (diff > 0.01) {
+          overtimeMinutes += diff;
+        }
+      }
+      if (comp.flags.missingClockOut) missingCount += 1;
+      if (comp.hasCheckOut && dayLateMin === 0 && !comp.flags.coreViolation && dayShortMin === 0 && !comp.flags.missingClockOut)
+        normalDays += 1;
     }
     lateMinutes += dayLateMin;
     shortfallMinutes += dayShortMin;
@@ -177,9 +204,6 @@ export function computeAttendanceScore(
     const dayDeduction =
       (dayLateMin * w.latePerHour + dayShortMin * w.shortfallPerHour) / 60 + (dayCore ? w.coreViolation : 0);
     dayCapRelief += Math.max(0, dayDeduction - w.absentPerDay);
-    if (comp.flags.missingClockOut) missingCount += 1;
-    if (comp.flags.overtime) overtimeMinutes += Math.max(0, comp.recognizedMinutes - comp.requiredMinutes);
-    if (isNormalWorkday(comp)) normalDays += 1;
   }
 
   // 무단이탈 — 집계 창 내 날짜만 합산
@@ -195,7 +219,7 @@ export function computeAttendanceScore(
   const deductionTotal = analogDeduction + awayDeduction + eventDeduction - dayCapRelief;
   const overtimeBonus = Math.min(w.overtimeCap, (overtimeMinutes / 60) * w.overtimePerHour);
   const rawScore = 100 - deductionTotal + overtimeBonus;
-  const score = Math.round(Math.max(0, Math.min(100 + w.overtimeCap, rawScore)));
+  const score = Math.round(Math.max(0, Math.min(100 + w.overtimeCap, rawScore)) * 10) / 10;
 
   return {
     year,

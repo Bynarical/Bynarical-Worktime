@@ -23,10 +23,11 @@ import { buildEmployeeOverview, EmployeeOverview, OverviewInput, TodayStatus } f
 import { computeAttendanceScore } from '@/lib/attendanceScore';
 import { AttendanceScoreCard, gradeColor } from '@/components/AttendanceScoreCard';
 
-const STATUS_META: Record<TodayStatus, { label: string; tone: 'primary' | 'success' | 'leave' | 'faint' }> = {
+const STATUS_META: Record<TodayStatus, { label: string; tone: 'primary' | 'success' | 'leave' | 'trip' | 'faint' }> = {
   WORKING: { label: '근무 중', tone: 'primary' },
   DONE: { label: '퇴근', tone: 'success' },
   LEAVE: { label: '휴가', tone: 'leave' }, // 실제 라벨은 휴가 종류로 대체
+  TRIP: { label: '✈️ 출장', tone: 'trip' },
   ABSENT: { label: '미출근', tone: 'faint' },
 };
 
@@ -74,7 +75,7 @@ export default function AdminDashboard() {
     });
   }, [s.profilesById, s.records, s.leaves, s.adjustments, s.confirmations, s.meals, s.settings, s.holidaySet, s.anomalyReviewKeys, monthPrefix, today, s.user]);
 
-  const presentCount = overviews.filter((o) => o.today.status === 'WORKING' || o.today.status === 'DONE').length;
+  const presentCount = overviews.filter((o) => o.today.status === 'WORKING' || o.today.status === 'DONE' || o.today.status === 'TRIP').length;
   const missingHire = overviews.filter((o) => !o.hireDate).length;
   const unsignedStaff = overviews.filter((o) => o.unsignedWeeks > 0).length;
   const anomalyStaff = overviews.filter((o) => o.anomalyDays > 0).length;
@@ -176,7 +177,7 @@ export default function AdminDashboard() {
                 <Row style={{ gap: 3, alignItems: 'flex-end' }}>
                   {sc.scheduledDays > 0 ? (
                     <>
-                      <Text style={{ color: gc, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 }}>{sc.score}</Text>
+                      <Text style={{ color: gc, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 }}>{sc.score.toFixed(1)}</Text>
                       <Text style={{ color: t.textFaint, fontSize: 11, marginBottom: 3 }}>점</Text>
                     </>
                   ) : (
@@ -186,7 +187,7 @@ export default function AdminDashboard() {
               </Row>
               <Muted size={11}>
                 정상 {sc.normalDays}/{sc.scheduledDays}일 · 지각 {sc.lateCount} · 부족 {sc.shortfallDays} · 결근 {sc.absentDays}
-                {sc.overtimeBonus > 0 ? ` · 초과 +${Math.round(sc.overtimeBonus)}` : ''}
+                {sc.overtimeBonus > 0 ? ` · 초과 +${Math.round(sc.overtimeBonus * 10) / 10}` : ''}
               </Muted>
             </Pressable>
           );
@@ -225,7 +226,15 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
   const leaveSt = leaveStyle(t, o.today.leaveCategory);
   const statusLabel = meta.tone === 'leave' ? leaveCategoryLabel(o.today.leaveCategory ?? undefined) : meta.label;
   const toneColor =
-    meta.tone === 'primary' ? t.primary : meta.tone === 'success' ? t.success : meta.tone === 'leave' ? leaveSt.color : t.textFaint;
+    meta.tone === 'primary'
+      ? t.primary
+      : meta.tone === 'success'
+      ? t.success
+      : meta.tone === 'leave'
+      ? leaveSt.color
+      : meta.tone === 'trip'
+      ? t.trip
+      : t.textFaint;
   const inHM = o.today.checkInMin != null ? minutesToHM(o.today.checkInMin) : '--:--';
   const outHM = o.today.checkOutMin != null ? minutesToHM(o.today.checkOutMin) : (o.today.status === 'WORKING' ? '근무 중' : '--:--');
   const shortfallDays = o.month.shortfallDays;
@@ -241,7 +250,11 @@ function EmployeeCard({ o, expanded, onToggle }: { o: EmployeeOverview; expanded
             {o.resignDate ? <Badge text={`퇴사 ${o.resignDate}`} color={t.textFaint} /> : null}
             {o.hasWarning ? <Text style={{ color: t.danger }}>●</Text> : null}
           </Row>
-          <Badge text={statusLabel} color={toneColor} soft={meta.tone === 'leave' ? leaveSt.soft : undefined} />
+          <Badge
+            text={statusLabel}
+            color={toneColor}
+            soft={meta.tone === 'leave' ? leaveSt.soft : meta.tone === 'trip' ? t.tripSoft : undefined}
+          />
         </Row>
       </Pressable>
 

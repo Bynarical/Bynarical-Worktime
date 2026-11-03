@@ -40,7 +40,7 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
         {hasData && <Badge text={`${score.grade}등급`} color={gc} />}
       </Row>
       <Row style={{ alignItems: 'flex-end', gap: 6 }}>
-        <Text style={{ fontSize: 40, fontWeight: '800', color: gc, letterSpacing: -1 }}>{hasData ? score.score : '-'}</Text>
+        <Text style={{ fontSize: 40, fontWeight: '800', color: gc, letterSpacing: -1 }}>{hasData ? score.score.toFixed(1) : '-'}</Text>
         <Text style={{ fontSize: 14, color: t.textFaint, marginBottom: 7 }}>/ 100점</Text>
         {score.overtimeBonus > 0 ? (
           <Text style={{ fontSize: 13, color: t.success, marginBottom: 8, fontWeight: '700' }}>초과근무 +{r1(score.overtimeBonus)}</Text>
@@ -73,8 +73,8 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
           {anyDeduction ? (
             <>
               <DedRow label={`무단결근 ${score.absentDays}일`} points={score.absentDays * w.absentPerDay} />
-              <DedRow label={`근로부족 ${score.shortfallDays}회`} detail={`${score.shortfallMinutes}분`} points={(score.shortfallMinutes * w.shortfallPerHour) / 60} />
-              <DedRow label={`지각 ${score.lateCount}회`} detail={`${score.lateMinutes}분`} points={(score.lateMinutes * w.latePerHour) / 60} />
+              <DedRow label={`근로부족 ${score.shortfallDays}회`} detail={`${Math.round(score.shortfallMinutes)}분`} points={(score.shortfallMinutes * w.shortfallPerHour) / 60} />
+              <DedRow label={`지각 ${score.lateCount}회`} detail={`${Math.round(score.lateMinutes)}분`} points={(score.lateMinutes * w.latePerHour) / 60} />
               <DedRow
                 label={`무단이탈 ${score.awayCount}건`}
                 detail={`${score.awayMinutes}분${score.awayCount > w.awayFreeCount ? ' · 잦음 가중' : ''}`}
@@ -93,8 +93,9 @@ export function AttendanceScoreCard({ name, score }: { name: string; score: Atte
             <Muted size={12}>감점 없음 — 성실 근무 👍</Muted>
           )}
           <Muted size={11} style={{ marginTop: 4 }}>
+            점수는 30분 단위 적용 출근이 아니라 실제 출퇴근 시각(분)으로 계산 — 일찍 와서 더 일한 시간은 초과근무로 반영.
             지각·부족은 시간(분)에 비례(조기퇴근은 근로부족으로 한 번만), 지각한 날의 코어타임 미충족은 지각으로 갈음,
-            하루 감점은 무단결근을 넘지 않음. 무단이탈은 시간 + 잦을수록 가중 감점. 연차·유급휴가는 정상,
+            하루 감점은 무단결근을 넘지 않음. 무단이탈은 시간 + 잦을수록 가중 감점. 연차·유급휴가·승인 출장은 정상,
             종일 무급휴가는 소정근로일에서 제외(감점·출근율 영향 없음). 100점 = A, 초과근무 가점 시 100 초과(S).
           </Muted>
         </>

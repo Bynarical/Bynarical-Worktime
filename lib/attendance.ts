@@ -121,6 +121,11 @@ export interface DayComputation {
   tripCoverMinutes: number; // 승인 출장이 덮는 소정근로(분) — 인정 한도
   tripMinutes: number; // 그중 실제로 부족분을 메운 인정 근로(분)
   recognizedMinutes: number; // 실근로 + 출장 인정 = 소정 충족 판정 기준
+  // 근태 점수용 — 30분 단위 적용 출근이 아니라 실제 출근시각(분)부터 센다.
+  // 8:45 출근과 8:57 출근이 같은 9:00 적용이어도 점수에서는 12분 차이가 난다.
+  actualWorkedMinutes: number; // 실제 출근(최소 출근시각 이전은 제외) ~ 퇴근, 휴게·외출 제외
+  actualRecognizedMinutes: number; // 실제 실근로 + 승인 출장 인정분
+  actualLateMinutes: number; // 출근 허용시각을 실제로 넘긴 분(30분 올림 없음)
   leaveMinutes: number; // 그날 휴가 합계(연차+유급+무급)
   annualMinutes: number; // 연차
   paidMinutes: number; // 유급휴가
@@ -211,21 +216,27 @@ export function computeDay(
   const bS = hmToMinutes(policy.breakStart);
   const bE = hmToMinutes(policy.breakEnd);
 
-  let workedMinutes = 0;
+  // 중간 외출(직접 지정 시간연차) 구간은 실근로에서 제외한다.
+  const customLeaveIv = leaves
+    .filter((l) => l.status === 'APPROVED' && l.segment === 'CUSTOM' && l.startTime && l.endTime)
+    .map((l) => ({ s: hmToMinutes(l.startTime as string), e: hmToMinutes(l.endTime as string) }));
+  const workedFrom = (startMin: number) =>
+    effOutMin != null && effOutMin > startMin
+      ? intervalsLength(subtract({ s: startMin, e: effOutMin }, [{ s: bS, e: bE }, ...customLeaveIv]))
+      : 0;
+
   let breakDeducted = 0;
   if (effOutMin != null && effOutMin > effectiveStartMin) {
-    const span = { s: effectiveStartMin, e: effOutMin };
-    breakDeducted = overlap(span, { s: bS, e: bE });
-    // 중간 외출(직접 지정 시간연차) 구간은 실근로에서 제외한다.
-    const customLeaveIv = leaves
-      .filter((l) => l.status === 'APPROVED' && l.segment === 'CUSTOM' && l.startTime && l.endTime)
-      .map((l) => ({ s: hmToMinutes(l.startTime as string), e: hmToMinutes(l.endTime as string) }));
-    workedMinutes = intervalsLength(subtract(span, [{ s: bS, e: bE }, ...customLeaveIv]));
+    breakDeducted = overlap({ s: effectiveStartMin, e: effOutMin }, { s: bS, e: bE });
   }
+  const workedMinutes = workedFrom(effectiveStartMin);
+  const actualWorkedMinutes =
+    checkInMin != null ? workedFrom(Math.max(checkInMin, policy.earliestClockIn ? hmToMinutes(policy.earliestClockIn) : 0)) : 0;
 
   // 승인 출장 인정분 — 부족한 만큼만 메운다(실근로와 합쳐 소정근로를 넘지 않음).
   const tripMinutes = Math.min(tripCover, Math.max(0, requiredMinutes - workedMinutes));
   const recognizedMinutes = workedMinutes + tripMinutes;
+  const actualRecognizedMinutes = actualWorkedMinutes + Math.min(tripCover, Math.max(0, requiredMinutes - actualWorkedMinutes));
 
   // 코어타임 유효 구간 = 코어창 - 연차 off - 승인 출장 구간
   const effectiveCore = subtract(
@@ -250,9 +261,11 @@ export function computeDay(
   // 미퇴근/부족 등이 정상 상황이므로 플래그를 매기지 않는다(하루가 지난 뒤 표시).
   const isClosedDay = opts.todayStr ? dateStr < opts.todayStr : true;
   let coreEndMissed = false;
+  let actualLateMinutes = 0;
 
   if (!isFullLeave && isWorkday && isClosedDay) {
     if (hasCheckIn && plannedStartMin > allowedClockIn + 0.01) flags.late = true;
+    if (checkInMin != null) actualLateMinutes = Math.max(0, checkInMin - allowedClockIn);
     if (hasCheckIn && !hasCheckOut) flags.missingClockOut = true;
 
     if (hasCheckOut && checkOutMin != null) {
@@ -313,6 +326,9 @@ export function computeDay(
     tripCoverMinutes: tripCover,
     tripMinutes,
     recognizedMinutes,
+    actualWorkedMinutes,
+    actualRecognizedMinutes,
+    actualLateMinutes,
     leaveMinutes,
     annualMinutes: byCategory.ANNUAL,
     paidMinutes: byCategory.PAID,

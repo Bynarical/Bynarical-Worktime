@@ -51,6 +51,10 @@ export function HelpManual({ onClose }: { onClose: () => void }) {
                 <Step>여기 기록되는 <Text style={{ fontWeight: '700' }}>근태 자료는 인사고과·연봉협상의 기초자료</Text>로 사용됩니다.</Step>
                 <Step><Text style={{ fontWeight: '700' }}>코어타임 준수·시간 내 성실 근무</Text>만 해주셔도 불이익이 없고, 더 열심히 근무한 분은 점수로 <Text style={{ fontWeight: '700' }}>더 챙겨드립니다</Text>.</Step>
                 <Step>지각·근로부족·조기퇴근·무단이탈 등은 관리자가 기록·관리하며 근태점수에 반영됩니다.</Step>
+                <Step>
+                  출퇴근 시각은 30분 단위로 적용되지만, 근태점수는 <Text style={{ fontWeight: '700' }}>실제 출퇴근 시각(분 단위)</Text>으로
+                  계산합니다. 일찍 와서 더 일한 시간도 점수에 반영됩니다.
+                </Step>
               </Section>
             </Card>
 
