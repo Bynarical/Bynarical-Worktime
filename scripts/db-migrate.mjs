@@ -102,10 +102,12 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbmig-'));
 process.on('exit', () => fs.rmSync(tmpDir, { recursive: true, force: true }));
 let tmpSeq = 0;
 
-function runSql(sql) {
+// CLI v3부터 원격 DB에 SQL을 보내면 확인을 요구한다(스크립트에선 물을 수 없어 거부됨).
+// 이력 조회는 --read-only로, 마이그레이션 적용·기록은 --yes로 보낸다 — 이 스크립트를 돌리는 것 자체가 적용 승인.
+function runSql(sql, { readOnly = false } = {}) {
   const file = path.join(tmpDir, `q${++tmpSeq}.sql`);
   fs.writeFileSync(file, sql, 'utf8');
-  const args = ['--yes', 'supabase', 'db', 'query', '--linked', '--project-ref', PROJECT_REF, '--agent', 'no', '-o', 'json', '-f', file];
+  const args = ['--yes', 'supabase', 'db', 'query', '--linked', '--project-ref', PROJECT_REF, '--agent', 'no', '-o', 'json', readOnly ? '--read-only' : '--yes', '-f', file];
   const opts = { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 };
   try {
     const out = isWin
@@ -151,9 +153,9 @@ const local = MIGRATIONS.map((name) => {
 // 이력 테이블이 없으면(첫 실행) 빈 이력. 없는 테이블을 참조하는 쿼리는 조건과 무관하게
 // 파싱 단계에서 실패하므로 존재 여부를 먼저 따로 묻는다.
 function fetchApplied() {
-  const [{ present } = {}] = runSql(`select to_regclass('${TRACK}') is not null as present`);
+  const [{ present } = {}] = runSql(`select to_regclass('${TRACK}') is not null as present`, { readOnly: true });
   if (!present) return new Map();
-  const rows = runSql(`select name, checksum, applied_at, applied_by from ${TRACK}`);
+  const rows = runSql(`select name, checksum, applied_at, applied_by from ${TRACK}`, { readOnly: true });
   return new Map(rows.map((r) => [r.name, r]));
 }
 
