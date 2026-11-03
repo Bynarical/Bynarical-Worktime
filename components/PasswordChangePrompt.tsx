@@ -18,7 +18,8 @@ export function PasswordChangePrompt() {
   const [manualRead, setManualRead] = useState(false);
   const [showManual, setShowManual] = useState(false);
 
-  if (!s.authed || s.user?.isAdmin || s.passwordChanged) return null;
+  // 관리자의 '직원 화면 미리보기'에선 띄우지 않는다(관리자 본인 계정 상태라 의미 없음).
+  if (!s.authed || s.user?.isAdmin || s.previewAs || s.passwordChanged) return null;
 
   // 안내사항을 여는 동안은 온보딩 모달을 숨기고 안내사항만 표시(모달 중첩 방지). 닫으면 읽음 처리.
   if (showManual) {

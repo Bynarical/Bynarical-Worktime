@@ -16,7 +16,7 @@ export function AssurancePopup() {
   const [show, setShow] = useState(false);
 
   const eligible =
-    s.authed && !s.user?.isAdmin && s.passwordChanged && dateKey() <= ASSURANCE_NOTICE_UNTIL;
+    s.authed && !s.user?.isAdmin && !s.previewAs && s.passwordChanged && dateKey() <= ASSURANCE_NOTICE_UNTIL;
 
   useEffect(() => {
     let alive = true;

@@ -25,7 +25,8 @@ export function SignReminderPopup() {
   const today = dateKey();
   const thisWeekStart = weekStartKey(today);
   const pending = unsignedPastWeeks(s.records, s.leaves, s.confirmations, s.user?.id, today);
-  const eligible = s.authed && !s.user?.isAdmin && s.passwordChanged && pending.length > 0;
+  // 관리자의 직원 화면 미리보기에선 서명 독촉을 띄우지 않는다(이력 탭에서 서명 흐름은 직접 볼 수 있음).
+  const eligible = s.authed && !s.user?.isAdmin && !s.previewAs && s.passwordChanged && pending.length > 0;
 
   useEffect(() => {
     let alive = true;
